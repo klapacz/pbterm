@@ -1,8 +1,10 @@
 #!/bin/sh
+set -eu
 
-#  This file has been "borrowed" from he example programs from the
-#  PocketBook SDK. It is is under the same license as those files
-#  are (probably the GPL).
+: "${POCKETBOOK_SDK:=${SDK_ROOT:-../SDK/SDK_6.3.0/SDK-B288}}"
+: "${BUILD_DIR:=build}"
 
-cmake -DCMAKE_BUILD_TYPE=Release -DTARGET_TYPE=ARM
-make
+cmake -S . -B "$BUILD_DIR" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPOCKETBOOK_SDK="$POCKETBOOK_SDK"
+cmake --build "$BUILD_DIR"

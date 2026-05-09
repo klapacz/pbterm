@@ -11,7 +11,12 @@ set(CMAKE_SYSTEM_VERSION 1.0)
 set(CMAKE_SYSTEM_PROCESSOR armv7a)
 set(BUILD_SHARED_LIBS ON)
 
-SET (TOOLCHAIN_PATH "../SDK/SDK-6.8/SDK-B300")
+set(POCKETBOOK_SDK "$ENV{POCKETBOOK_SDK}" CACHE PATH "Path to PocketBook SDK target directory (for example ../SDK/SDK_6.3.0/SDK-B288)")
+if(NOT POCKETBOOK_SDK)
+    set(POCKETBOOK_SDK "${CMAKE_SOURCE_DIR}/../SDK/SDK_6.3.0/SDK-B288" CACHE PATH "Path to PocketBook SDK target directory" FORCE)
+endif()
+get_filename_component(TOOLCHAIN_PATH "${POCKETBOOK_SDK}" ABSOLUTE)
+message(STATUS "PocketBook SDK: ${TOOLCHAIN_PATH}")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 set(CMAKE_FIND_ROOT_PATH "${TOOLCHAIN_PATH}/usr/arm-obreey-linux-gnueabi/sysroot/")
@@ -28,8 +33,8 @@ set(CMAKE_PREFIX_PATH "${TOOLCHAIN_PATH}/usr/arm-obreey-linux-gnueabi/sysroot/eb
 
 set(CMAKE_C_COMPILER "${TOOLCHAIN_PATH}/usr/bin/arm-obreey-linux-gnueabi-clang")
 set(CMAKE_CXX_COMPILER "${TOOLCHAIN_PATH}/usr/bin/arm-obreey-linux-gnueabi-clang++")
-set(CMAKE_C_FLAGS "-v -fsigned-char -Werror-return-type" CACHE STRING "" FORCE)
-set(CMAKE_CXX_FLAGS "-v -Wl,--copy-dt-needed-entries -fsigned-char -Werror-return-type" CACHE STRING "" FORCE)
+set(CMAKE_C_FLAGS "-fsigned-char -Werror-return-type" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS "-fsigned-char -Werror-return-type" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -O2 -pipe -fomit-frame-pointer -march=armv7-a -mtune=cortex-a8 -mfpu=neon -mfloat-abi=softfp " CACHE STRING "" FORCE)
 set(CMAKE_C_FLAGS_RELEASE "-DNDEBUG -O2 -pipe -fomit-frame-pointer -march=armv7-a -mtune=cortex-a8 -mfpu=neon -mfloat-abi=softfp " CACHE STRING "" FORCE)
 set(CMAKE_C_FLAGS_DEBUG "-DDEBUG -O0 -g -pipe -fomit-frame-pointer -march=armv7-a -mtune=cortex-a8 -mfpu=neon -mfloat-abi=softfp " CACHE STRING "" FORCE)
@@ -71,7 +76,6 @@ SET (SRC_LIST
 
 ADD_EXECUTABLE (pbterm.app
 		${SRC_LIST})
-target_link_options(pbterm.app PRIVATE "LINKER:-v")
 target_link_options(pbterm.app PRIVATE "LINKER:-copy-dt-needed-entries")
 target_link_libraries(pbterm.app PRIVATE pthread inkview freetype stdc++fs z)
 
