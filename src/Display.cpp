@@ -189,11 +189,49 @@ Display::draw_screen( TerminalScreen const & screen )
     int const cell_width = StringWidth( "M" );
     int const cell_height = m_font_size + m_lines.line_spacing( );
 
+    bool const has_cells = ! screen.cells.empty( );
+
     for ( std::size_t y = 0; y < screen.lines.size( ); ++y )
     {
         int const py = m_lines.y_margin( ) + static_cast< int >( y ) * cell_height;
         if ( py >= ScreenHeight( ) )
             break;
+
+        if ( has_cells && y < screen.cells.size( ) )
+        {
+            std::vector< TerminalCell > const & row = screen.cells[ y ];
+            for ( std::size_t x_cell = 0; x_cell < row.size( ); ++x_cell )
+            {
+                int const px = m_lines.x_margin( ) + static_cast< int >( x_cell ) * cell_width;
+                if ( px >= ScreenWidth( ) )
+                    break;
+
+                TerminalCell const & cell = row[ x_cell ];
+                bool const is_cursor =    screen.cursor_visible
+                                      && x_cell == screen.cursor_x
+                                      && y == screen.cursor_y;
+
+                if ( cell.has_background || is_cursor )
+                {
+                    int const bg = is_cursor || cell.dark_background ? BLACK : LGRAY;
+                    FillArea( px, py, cell_width, cell_height, bg );
+                }
+
+                if ( cell.has_text && cell.text != " " )
+                {
+                    int fg = BLACK;
+                    if ( is_cursor || ( cell.has_background && cell.dark_background ) )
+                        fg = WHITE;
+                    else if ( cell.dim_foreground )
+                        fg = DGRAY;
+
+                    SetFont( m_font, fg );
+                    DrawString( px, py, cell.text.c_str( ) );
+                }
+            }
+            SetFont( m_font, BLACK );
+            continue;
+        }
 
         std::string const & line = screen.lines[ y ];
         std::size_t start = 0;
@@ -216,7 +254,7 @@ Display::draw_screen( TerminalScreen const & screen )
         }
     }
 
-    if ( screen.cursor_visible )
+    if ( screen.cursor_visible && ! has_cells )
     {
         int const x = m_lines.x_margin( ) + screen.cursor_x * cell_width;
         int const y = m_lines.y_margin( ) + screen.cursor_y * cell_height;

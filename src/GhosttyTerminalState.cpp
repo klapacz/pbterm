@@ -4,6 +4,21 @@
 namespace
 {
 
+int
+luminance( GhosttyColorRgb const & color )
+{
+    return ( 299 * color.r + 587 * color.g + 114 * color.b ) / 1000;
+}
+
+bool
+is_non_default_background( GhosttyColorRgb const & color )
+{
+    // Treat near-white as the normal e-ink page background. Any darker
+    // terminal background is rendered as a highlighted cell, which makes
+    // selections, status bars, and TUI cursor lines visible on PocketBook.
+    return luminance( color ) < 235;
+}
+
 void
 append_utf8( std::string & out,
              uint32_t      cp )
@@ -173,49 +188,140 @@ GhosttyTerminalState::screen( )
     if ( ! m_terminal )
         return screen;
 
-    ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_COLS, &screen.cols );
-    ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_ROWS, &screen.rows );
-    ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_CURSOR_X, &screen.cursor_x );
-    ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_CURSOR_Y, &screen.cursor_y );
-    ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_CURSOR_VISIBLE, &screen.cursor_visible );
-
-    // Keep using direct grid reads for now rather than the old text snapshot
-    // path. This preserves terminal rows/columns exactly: rows are not
-    // trimmed, not wrapped, and leading/trailing spaces remain real cells.
-    screen.lines.reserve( screen.rows );
-
-    for ( uint16_t y = 0; y < screen.rows; ++y )
+    if ( ! m_render_state )
     {
-        std::string line;
-        for ( uint16_t x = 0; x < screen.cols; ++x )
-        {
-            GhosttyPoint point = { };
-            point.tag = GHOSTTY_POINT_TAG_ACTIVE;
-            point.value.coordinate.x = x;
-            point.value.coordinate.y = y;
-
-            GhosttyGridRef ref = GHOSTTY_INIT_SIZED( GhosttyGridRef );
-            GhosttyCell cell = 0;
-            bool has_text = false;
-            uint32_t codepoint = 0;
-
-            if (    ghostty_terminal_grid_ref( m_terminal, point, &ref ) == GHOSTTY_SUCCESS
-                 && ghostty_grid_ref_cell( &ref, &cell ) == GHOSTTY_SUCCESS )
-            {
-                ghostty_cell_get( cell, GHOSTTY_CELL_DATA_HAS_TEXT, &has_text );
-                ghostty_cell_get( cell, GHOSTTY_CELL_DATA_CODEPOINT, &codepoint );
-            }
-
-            if ( has_text && codepoint != 0 )
-                append_utf8( line, codepoint );
-            else
-                line += ' ';
-        }
-        screen.lines.push_back( line );
+        ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_COLS, &screen.cols );
+        ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_ROWS, &screen.rows );
+        return screen;
     }
 
-    if ( m_render_state )
-        ghostty_render_state_update( m_render_state, m_terminal );
+    // The terminal grid storage can be circular after scrolling. Reading
+    // GHOSTTY_POINT_TAG_ACTIVE coordinates directly can therefore expose the
+    // physical row order, which makes the bottom rows appear at the top after
+    // enough output. The render state is Ghostty's viewport API; it linearizes
+    // the active visible screen into top-to-bottom rows and also gives cursor
+    // viewport coordinates.
+    if ( ghostty_render_state_update( m_render_state, m_terminal ) != GHOSTTY_SUCCESS )
+    {
+        m_logger.error( ) << "ghostty_render_state_update() failed" << std::endl;
+        return screen;
+    }
+
+    ghostty_render_state_get( m_render_state,
+                              GHOSTTY_RENDER_STATE_DATA_COLS,
+                              &screen.cols );
+    ghostty_render_state_get( m_render_state,
+                              GHOSTTY_RENDER_STATE_DATA_ROWS,
+                              &screen.rows );
+    ghostty_render_state_get( m_render_state,
+                              GHOSTTY_RENDER_STATE_DATA_CURSOR_VISIBLE,
+                              &screen.cursor_visible );
+
+    bool has_cursor = false;
+    ghostty_render_state_get( m_render_state,
+                              GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_HAS_VALUE,
+                              &has_cursor );
+    if ( has_cursor )
+    {
+        ghostty_render_state_get( m_render_state,
+                                  GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_X,
+                                  &screen.cursor_x );
+        ghostty_render_state_get( m_render_state,
+                                  GHOSTTY_RENDER_STATE_DATA_CURSOR_VIEWPORT_Y,
+                                  &screen.cursor_y );
+    }
+    else
+        screen.cursor_visible = false;
+
+    screen.lines.reserve( screen.rows );
+
+    GhosttyRenderStateRowIterator rows = nullptr;
+    GhosttyRenderStateRowCells cells = nullptr;
+    if (    ghostty_render_state_row_iterator_new( nullptr, &rows ) != GHOSTTY_SUCCESS
+         || ghostty_render_state_row_cells_new( nullptr, &cells ) != GHOSTTY_SUCCESS
+         || ghostty_render_state_get( m_render_state,
+                                      GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR,
+                                      rows ) != GHOSTTY_SUCCESS )
+    {
+        if ( cells )
+            ghostty_render_state_row_cells_free( cells );
+        if ( rows )
+            ghostty_render_state_row_iterator_free( rows );
+        m_logger.error( ) << "ghostty render row iterator setup failed" << std::endl;
+        return screen;
+    }
+
+    while ( ghostty_render_state_row_iterator_next( rows )
+            && screen.lines.size( ) < screen.rows )
+    {
+        std::string line;
+        std::vector< TerminalCell > row_cells;
+        row_cells.reserve( screen.cols );
+
+        if ( ghostty_render_state_row_get( rows,
+                                           GHOSTTY_RENDER_STATE_ROW_DATA_CELLS,
+                                           cells ) == GHOSTTY_SUCCESS )
+        {
+            for ( uint16_t x = 0; x < screen.cols; ++x )
+            {
+                TerminalCell terminal_cell;
+                uint32_t graphemes_len = 0;
+                uint32_t codepoint = 0;
+
+                if ( ghostty_render_state_row_cells_select( cells, x ) == GHOSTTY_SUCCESS )
+                {
+                    if (    ghostty_render_state_row_cells_get( cells,
+                                                                GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_LEN,
+                                                                &graphemes_len ) == GHOSTTY_SUCCESS
+                         && graphemes_len > 0
+                         && ghostty_render_state_row_cells_get( cells,
+                                                                GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF,
+                                                                &codepoint ) == GHOSTTY_SUCCESS
+                         && codepoint != 0 )
+                    {
+                        terminal_cell.text.clear( );
+                        append_utf8( terminal_cell.text, codepoint );
+                        terminal_cell.has_text = true;
+                    }
+
+                    GhosttyColorRgb bg = { };
+                    if ( ghostty_render_state_row_cells_get( cells,
+                                                             GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_BG_COLOR,
+                                                             &bg ) == GHOSTTY_SUCCESS
+                         && is_non_default_background( bg ) )
+                    {
+                        terminal_cell.has_background = true;
+                        terminal_cell.dark_background = luminance( bg ) < 128;
+                    }
+
+                    GhosttyColorRgb fg = { };
+                    if ( ghostty_render_state_row_cells_get( cells,
+                                                             GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_FG_COLOR,
+                                                             &fg ) == GHOSTTY_SUCCESS )
+                        terminal_cell.dim_foreground = luminance( fg ) > 170;
+                }
+
+                line += terminal_cell.has_text ? terminal_cell.text : " ";
+                row_cells.push_back( terminal_cell );
+            }
+        }
+        while ( row_cells.size( ) < screen.cols )
+        {
+            line += ' ';
+            row_cells.push_back( TerminalCell( ) );
+        }
+        screen.lines.push_back( line );
+        screen.cells.push_back( row_cells );
+    }
+
+    while ( screen.lines.size( ) < screen.rows )
+    {
+        screen.lines.push_back( std::string( screen.cols, ' ' ) );
+        screen.cells.push_back( std::vector< TerminalCell >( screen.cols ) );
+    }
+
+    ghostty_render_state_row_cells_free( cells );
+    ghostty_render_state_row_iterator_free( rows );
 
     return screen;
 }
