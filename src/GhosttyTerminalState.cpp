@@ -273,11 +273,22 @@ GhosttyTerminalState::screen( )
                     if (    ghostty_render_state_row_cells_get( cells,
                                                                 GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_LEN,
                                                                 &graphemes_len ) == GHOSTTY_SUCCESS
-                         && graphemes_len > 0
-                         && ghostty_render_state_row_cells_get( cells,
-                                                                GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF,
-                                                                &codepoint ) == GHOSTTY_SUCCESS
-                         && codepoint != 0 )
+                         && graphemes_len > 0 )
+                    {
+                        // GRAPHEMES_BUF writes graphemes_len uint32_t values into
+                        // the caller-provided buffer. The previous code passed a
+                        // single uint32_t, which corrupts the stack for combined
+                        // graphemes and can make text disappear while the cursor
+                        // still renders. Keep the full buffer, but render the base
+                        // codepoint for now.
+                        std::vector< uint32_t > graphemes( graphemes_len );
+                        if ( ghostty_render_state_row_cells_get( cells,
+                                                                 GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF,
+                                                                 graphemes.data( ) ) == GHOSTTY_SUCCESS )
+                            codepoint = graphemes[ 0 ];
+                    }
+
+                    if ( codepoint != 0 )
                     {
                         terminal_cell.text.clear( );
                         append_utf8( terminal_cell.text, codepoint );
