@@ -11,6 +11,8 @@ set(CMAKE_SYSTEM_VERSION 1.0)
 set(CMAKE_SYSTEM_PROCESSOR armv7a)
 set(BUILD_SHARED_LIBS ON)
 
+set(GHOSTTY_VT_ROOT "$ENV{GHOSTTY_VT_ROOT}" CACHE PATH "Path to libghostty-vt install root containing include/ and lib/")
+
 set(POCKETBOOK_SDK "$ENV{POCKETBOOK_SDK}" CACHE PATH "Path to PocketBook SDK target directory (for example ../SDK/SDK_6.3.0/SDK-B288)")
 if(NOT POCKETBOOK_SDK)
     set(POCKETBOOK_SDK "${CMAKE_SOURCE_DIR}/../SDK/SDK_6.3.0/SDK-B288" CACHE PATH "Path to PocketBook SDK target directory" FORCE)
@@ -60,6 +62,7 @@ SET (SRC_LIST
 	${CMAKE_SOURCE_DIR}/src/pbterm.cpp
 	${CMAKE_SOURCE_DIR}/src/Messenger.cpp
     ${CMAKE_SOURCE_DIR}/src/Logger.cpp	
+    ${CMAKE_SOURCE_DIR}/src/GhosttyProbe.cpp
     ${CMAKE_SOURCE_DIR}/src/Config.cpp
     ${CMAKE_SOURCE_DIR}/src/Term.cpp	
     ${CMAKE_SOURCE_DIR}/src/Display.cpp
@@ -77,6 +80,15 @@ SET (SRC_LIST
 ADD_EXECUTABLE (pbterm.app
 		${SRC_LIST})
 target_link_options(pbterm.app PRIVATE "LINKER:-copy-dt-needed-entries")
+if(GHOSTTY_VT_ROOT)
+    get_filename_component(GHOSTTY_VT_ROOT_ABS "${GHOSTTY_VT_ROOT}" ABSOLUTE)
+    message(STATUS "Ghostty VT: ${GHOSTTY_VT_ROOT_ABS}")
+    target_compile_definitions(pbterm.app PRIVATE GHOSTTY_STATIC=1)
+    target_include_directories(pbterm.app PRIVATE "${GHOSTTY_VT_ROOT_ABS}/include")
+    target_link_libraries(pbterm.app PRIVATE "${GHOSTTY_VT_ROOT_ABS}/lib/libghostty-vt.a")
+else()
+    message(FATAL_ERROR "GHOSTTY_VT_ROOT is required for the Ghostty VT integration proof")
+endif()
 target_link_libraries(pbterm.app PRIVATE pthread inkview freetype stdc++fs z)
 
 INSTALL (TARGETS pbterm.app)

@@ -20,6 +20,7 @@
 
 #include "Messenger.hpp"
 #include "Inkview.hpp"
+#include "GhosttyProbe.hpp"
 
 
 /******************************************
@@ -63,6 +64,11 @@ inkview_handler( int type,
 int
 main( )
 {
+    // Minimal link/runtime smoke test for libghostty-vt. The result is
+    // intentionally ignored for now; real terminal-state integration comes
+    // after proving the library can be linked into the PocketBook app.
+    ( void ) ghostty_probe_link( );
+
     InkViewMain( inkview_handler );
     return 0;
 }

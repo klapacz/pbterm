@@ -134,6 +134,7 @@
           cmakeFlags = [
             "-DCMAKE_BUILD_TYPE=Release"
             "-DPOCKETBOOK_SDK=${pocketbookSdk}"
+            "-DGHOSTTY_VT_ROOT=${ghostty-vt-arm}"
           ];
           installPhase = ''
             runHook preInstall
@@ -150,11 +151,12 @@
         SDK_ROOT = pocketbookSdk;
         GHOSTTY_SRC = ghosttySrc;
         GHOSTTY_ZIG_DEPS = ghosttyZigDeps;
+        GHOSTTY_VT_ROOT = self.packages.${system}.ghostty-vt-arm;
         shellHook = ''
           echo "PocketBook SDK: ${pocketbookSdk}"
           echo "Ghostty source: ${ghosttySrc}"
           echo "Ghostty Zig deps: ${ghosttyZigDeps}"
-          echo "Configure: cmake -S . -B build -DPOCKETBOOK_SDK=$POCKETBOOK_SDK -DCMAKE_BUILD_TYPE=Release"
+          echo "Configure: cmake -S . -B build -DPOCKETBOOK_SDK=$POCKETBOOK_SDK -DGHOSTTY_VT_ROOT=$GHOSTTY_VT_ROOT -DCMAKE_BUILD_TYPE=Release"
           echo "Build:     cmake --build build"
           echo "Nix:       nix build"
           echo "Ghostty:   nix build .#ghostty-vt-arm"

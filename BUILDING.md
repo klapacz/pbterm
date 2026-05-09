@@ -14,6 +14,8 @@ The built app is available at:
 result/bin/pbterm.app
 ```
 
+The default app build now links `libghostty-vt.a` and runs a tiny startup smoke test that creates and frees a Ghostty terminal. This is only a proof of integration; pbterm's renderer has not been replaced yet.
+
 ## Ghostty VT ARM proof build
 
 The flake also contains a reproducible proof build for Ghostty's VT/terminal core:
@@ -36,7 +38,7 @@ Ghostty's Zig dependencies are provided through upstream's generated `build.zig.
 
 ```sh
 nix develop
-cmake -S . -B build -DPOCKETBOOK_SDK="$POCKETBOOK_SDK" -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DPOCKETBOOK_SDK="$POCKETBOOK_SDK" -DGHOSTTY_VT_ROOT="$GHOSTTY_VT_ROOT" -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
@@ -58,8 +60,8 @@ If you have the SDK checked out beside this repository, the default SDK path is:
 Override it with either an environment variable or a CMake option:
 
 ```sh
-POCKETBOOK_SDK=/path/to/SDK-B288 ./makearm.sh
+POCKETBOOK_SDK=/path/to/SDK-B288 GHOSTTY_VT_ROOT=/path/to/ghostty-vt-arm ./makearm.sh
 # or
-cmake -S . -B build -DPOCKETBOOK_SDK=/path/to/SDK-B288 -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DPOCKETBOOK_SDK=/path/to/SDK-B288 -DGHOSTTY_VT_ROOT=/path/to/ghostty-vt-arm -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
