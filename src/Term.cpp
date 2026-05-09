@@ -159,19 +159,34 @@ Term::send_command( std::string const & cmd )
 {
     if ( send( cmd.c_str( ), cmd.size( ) ) )
     {
-        // The current PTY setup disables echo, so keep local command echoing
-        // but route it through Ghostty's screen model instead of directly
-        // appending to the legacy text buffer.
+        // When using a real PTY, leave echoing to the terminal line
+        // discipline. This is important for live keyboards: the normal shell
+        // should echo typed characters, while full-screen TUI programs can
+        // disable echo and redraw through Ghostty themselves.
         //
-        // A terminal line-feed moves the cursor down, but does not imply a
-        // carriage-return. Shell output normally arrives as CRLF through the
-        // PTY's ONLCR processing; mirror that for our local echo so Ghostty
-        // starts the next line at column zero instead of continuing diagonally.
-        std::string echo = terminal_bytes::lf_to_crlf( cmd );
-        m_ghostty.write( echo.c_str( ), echo.size( ) );
-        send_ghostty_screen( );
-        save_command( cmd.substr( 0, cmd.size( ) - 1 ) );
+        // If we had to fall back to pipes there is no terminal line
+        // discipline, so keep the old local echo path for that mode only.
+        if ( ! using_pty( ) )
+        {
+            std::string echo = terminal_bytes::lf_to_crlf( cmd );
+            m_ghostty.write( echo.c_str( ), echo.size( ) );
+            send_ghostty_screen( );
+        }
+
+        if ( ! cmd.empty( ) )
+            save_command( cmd.substr( 0, cmd.size( ) - 1 ) );
     }
+}
+
+
+/******************************************
+ * Sends raw terminal input bytes to the shell. Used by live keyboards.
+ ******************************************/
+
+void
+Term::send_input( std::string const & bytes )
+{
+    send( bytes.c_str(), bytes.size() );
 }
 
 
@@ -451,31 +466,6 @@ Term::open_master_pty( std::string & slave_name )
 
     slave_name = sn;
 
-    // Switch off echoing, otherwise we would read back everything we're
-    // sending to the pseudoterminal. Keep output post-processing enabled:
-    // a real terminal receives CRLF for newlines, while bare LF in a VT moves
-    // down without returning to column zero.
-
-    struct termios tp;
-
-    if ( tcgetattr( fd, &tp ) == -1 )
-    {
-        m_logger.error( ) << "tcgetattr() failed: "
-                          << strerror( errno ) << std::endl;
-        close( fd );
-        return -1;
-    }
-
-    tp.c_lflag &= ~ ECHO;
-
-    if ( tcsetattr( fd, TCSANOW, &tp ) == -1 )
-    {
-        m_logger.error( ) << "tcsetattr() failed: "
-                          << strerror( errno ) << std::endl;
-        close( fd );
-        return -1;
-    }
-
     return fd;
 }
 
@@ -522,10 +512,11 @@ Term::setup_child( std::string const & slave_name,
 #endif
 
     // Make the slave look like a normal terminal for line-oriented shell
-    // output. In particular, ONLCR turns '\n' written by programs into
-    // "\r\n" before it reaches the terminal emulator, so each new line starts
-    // in column zero. Keep echo disabled because pbterm echoes commands into
-    // Ghostty itself.
+    // output and live keyboard input. In particular, ONLCR turns '\n' written
+    // by programs into "\r\n" before it reaches the terminal emulator, so each
+    // new line starts in column zero. Keep echo enabled for the interactive
+    // shell; TUI programs such as tmux will disable it when they enter raw
+    // mode.
 
     struct termios tp;
     if ( tcgetattr( slave_fd, &tp ) == -1 )
@@ -536,7 +527,7 @@ Term::setup_child( std::string const & slave_name,
         return;
     }
 
-    tp.c_lflag &= ~ ECHO;
+    tp.c_lflag |= ECHO;
     tp.c_oflag |= OPOST | ONLCR;
 
     if ( tcsetattr( slave_fd, TCSANOW, &tp ) == -1 )

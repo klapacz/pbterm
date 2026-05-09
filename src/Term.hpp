@@ -57,6 +57,10 @@ class Term
 
 
     void
+    send_input( std::string const & bytes );
+
+
+    void
     send_control( char crtl );
 
 

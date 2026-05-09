@@ -35,6 +35,7 @@ class Menu_Handler;
 class Button_Handler;
 class Pointer_Handler;
 class Rotation_Handler;
+class BluetoothKeyboard;
 
 
 /******************************************
@@ -125,6 +126,9 @@ class Messenger
 
 
     Rotation_Handler * m_rotation_handler;
+
+
+    BluetoothKeyboard * m_bluetooth_keyboard;
 
 
     bool m_is_shutting_down;

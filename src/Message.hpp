@@ -148,6 +148,18 @@ struct message
     };
 
 
+    // Message sent when raw terminal input bytes should be sent to the PTY
+
+    struct Terminal_Input
+    {
+        Terminal_Input( std::string const & bytes )
+            : bytes( bytes )
+        { }
+
+        std::string bytes;
+    };
+
+
     // Message sent when the user requests that a control character is sent
 
     struct New_Ctrl_Char

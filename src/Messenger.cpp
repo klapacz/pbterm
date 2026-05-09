@@ -28,6 +28,7 @@
 #include "Button_Handler.hpp"
 #include "Pointer_Handler.hpp"
 #include "Rotation_Handler.hpp"
+#include "BluetoothKeyboard.hpp"
 #include <dlfcn.h>
 
 
@@ -43,6 +44,7 @@ Messenger::Messenger( )
     , m_menu_handler( 0 )
     , m_button_handler( 0 )
     , m_pointer_handler( 0 )
+    , m_bluetooth_keyboard( 0 )
     , m_is_shutting_down( false )
     , m_is_recording( false )
     , m_inkview_handle( 0 )
@@ -87,6 +89,7 @@ Messenger::Messenger( )
     m_kbd_handler      = new Keyboard_Handler( *this, config );
     m_menu_handler     = new Menu_Handler( *this, config );
     m_rotation_handler = new Rotation_Handler( *this, config );
+    m_bluetooth_keyboard = new BluetoothKeyboard( *this );
 }
 
 
@@ -96,6 +99,7 @@ Messenger::Messenger( )
 
 Messenger::~Messenger( )
 {
+    delete m_bluetooth_keyboard;
     delete m_rotation_handler;
     delete m_pointer_handler;
     delete m_button_handler;
@@ -179,6 +183,18 @@ Messenger::send< message::New_Command >( message::New_Command const & mess )
 
 
 /******************************************
+ * Receives raw terminal input bytes, sent by live keyboards.
+ ******************************************/
+
+template < >
+void
+Messenger::send< message::Terminal_Input >( message::Terminal_Input const & mess )
+{
+    m_term->send_input( mess.bytes );
+}
+
+
+/******************************************
  * Receives the "New Ctrl_Char" message, sent when the user asked for a
  * control char being sent to the shell
  ******************************************/
@@ -195,11 +211,14 @@ Messenger::send< message::New_Ctrl_Char >( message::New_Ctrl_Char const & mess )
 
     m_term->send_control( mess.ctrl[ 1 ] - 'A' + 1 );
 
-    // A "^C" is normally shown on terminals
+    // A "^C" is normally shown by a real PTY when echo is enabled. Do not
+    // draw it through the legacy text path because that clears the saved
+    // Ghostty screen. Only keep the old local display fallback for pipe mode.
 
     if ( mess.ctrl[ 1 ] == 'C' )
     {
-        m_display->add_text( mess.ctrl );
+        if ( ! m_term->using_pty( ) )
+            m_display->add_text( mess.ctrl );
 
         if ( m_is_recording )
             *m_logger << mess.ctrl;
