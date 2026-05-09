@@ -56,6 +56,7 @@ BluetoothKeyboard::BluetoothKeyboard( Messenger & mess, Logger & logger )
     , m_stop( false )
     , m_shift( false )
     , m_ctrl( false )
+    , m_alt( false )
     , m_altgr( false )
     , m_logged_no_keyboard( false )
     , m_logged_event_id( -1 )
@@ -219,6 +220,7 @@ std::string BluetoothKeyboard::translate_key( unsigned short code, bool press )
 {
     if ( code == KEY_LEFTSHIFT || code == KEY_RIGHTSHIFT ) { m_shift = press; return {}; }
     if ( code == KEY_LEFTCTRL || code == KEY_RIGHTCTRL ) { m_ctrl = press; return {}; }
+    if ( code == KEY_LEFTALT ) { m_alt = press; return {}; }
     if ( code == KEY_RIGHTALT ) { m_altgr = press; return {}; }
     if ( ! press ) return {};
 
@@ -244,9 +246,12 @@ std::string BluetoothKeyboard::translate_key( unsigned short code, bool press )
     auto it = map.find( code );
     if ( it == map.end() ) return {};
     char c = it->second;
-    if ( m_ctrl && c >= 'a' && c <= 'z' ) return std::string( 1, c - 'a' + 1 );
-    if ( m_ctrl && c >= 'A' && c <= 'Z' ) return std::string( 1, c - 'A' + 1 );
-    return std::string( 1, c );
+    std::string out;
+    if ( m_ctrl && c >= 'a' && c <= 'z' ) out = std::string( 1, c - 'a' + 1 );
+    else if ( m_ctrl && c >= 'A' && c <= 'Z' ) out = std::string( 1, c - 'A' + 1 );
+    else out = std::string( 1, c );
+    if ( m_alt ) out.insert( out.begin(), '\x1b' );
+    return out;
 }
 
 void BluetoothKeyboard::send_bytes( std::string const & bytes )

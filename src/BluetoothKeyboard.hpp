@@ -35,6 +35,7 @@ class BluetoothKeyboard
     std::thread m_thread;
     bool m_shift;
     bool m_ctrl;
+    bool m_alt;
     bool m_altgr;
     bool m_logged_no_keyboard;
     int m_logged_event_id;
