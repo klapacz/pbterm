@@ -39,6 +39,54 @@ font_height_px( ifont const * font,
     return fallback_size;
 }
 
+int
+cell_height_px( ifont const * font,
+                int           fallback_size,
+                int           line_spacing )
+{
+    return std::max( 1, font_height_px( font, fallback_size ) + line_spacing );
+}
+
+int
+bottom_clip_guard_px( ifont const * font,
+                      int           fallback_size )
+{
+    // InkView's raw text drawing is not reliably clipped by DrawString() near
+    // the physical bottom edge on the device. If glyph pixels run past the
+    // framebuffer, they can wrap/ghost at the top, which looks exactly like the
+    // last terminal rows moved to row 0. Keep one extra cell-height of slack in
+    // the advertised terminal geometry and additionally set an explicit clip
+    // before drawing the grid.
+    return font_height_px( font, fallback_size );
+}
+
+class ScopedClip
+{
+  public:
+    ScopedClip( int x,
+                int y,
+                int w,
+                int h )
+    {
+        GetClip( &m_x, &m_y, &m_w, &m_h );
+        SetClip( x, y, w, h );
+    }
+
+    ~ScopedClip( )
+    {
+        SetClip( m_x, m_y, m_w, m_h );
+    }
+
+    ScopedClip( ScopedClip const & ) = delete;
+    ScopedClip & operator=( ScopedClip const & ) = delete;
+
+  private:
+    int m_x = 0;
+    int m_y = 0;
+    int m_w = 0;
+    int m_h = 0;
+};
+
 }
 
 
@@ -202,15 +250,28 @@ void
 Display::draw_screen( TerminalScreen const & screen )
 {
     int const cell_width = std::max( 1, StringWidth( "M" ) );
-    int const cell_height = std::max( 1, font_height_px( m_font, m_font_size )
-                                         + m_lines.line_spacing( ) );
+    int const cell_height = cell_height_px( m_font,
+                                            m_font_size,
+                                            m_lines.line_spacing( ) );
+    int const clip_x = m_lines.x_margin( );
+    int const clip_y = m_lines.y_margin( );
+    int const clip_w = std::max( 0, ScreenWidth( ) - 2 * m_lines.x_margin( ) );
+    int const clip_h = std::max( 0, ScreenHeight( )
+                                    - 2 * m_lines.y_margin( )
+                                    - bottom_clip_guard_px( m_font,
+                                                            m_font_size ) );
+
+    if ( clip_w <= 0 || clip_h <= 0 )
+        return;
+
+    ScopedClip clip( clip_x, clip_y, clip_w, clip_h );
 
     bool const has_cells = ! screen.cells.empty( );
 
     for ( std::size_t y = 0; y < screen.lines.size( ); ++y )
     {
-        int const py = m_lines.y_margin( ) + static_cast< int >( y ) * cell_height;
-        if ( py + cell_height > ScreenHeight( ) - m_lines.y_margin( ) )
+        int const py = clip_y + static_cast< int >( y ) * cell_height;
+        if ( py + cell_height > clip_y + clip_h )
             break;
 
         if ( has_cells && y < screen.cells.size( ) )
@@ -218,8 +279,8 @@ Display::draw_screen( TerminalScreen const & screen )
             std::vector< TerminalCell > const & row = screen.cells[ y ];
             for ( std::size_t x_cell = 0; x_cell < row.size( ); ++x_cell )
             {
-                int const px = m_lines.x_margin( ) + static_cast< int >( x_cell ) * cell_width;
-                if ( px + cell_width > ScreenWidth( ) - m_lines.x_margin( ) )
+                int const px = clip_x + static_cast< int >( x_cell ) * cell_width;
+                if ( px + cell_width > clip_x + clip_w )
                     break;
 
                 TerminalCell const & cell = row[ x_cell ];
@@ -262,8 +323,8 @@ Display::draw_screen( TerminalScreen const & screen )
             if ( end == std::string::npos )
                 end = line.size( );
 
-            int const px = m_lines.x_margin( ) + static_cast< int >( start ) * cell_width;
-            if ( px < ScreenWidth( ) )
+            int const px = clip_x + static_cast< int >( start ) * cell_width;
+            if ( px < clip_x + clip_w )
                 DrawString( px, py, line.substr( start, end - start ).c_str( ) );
 
             start = end;
@@ -272,9 +333,9 @@ Display::draw_screen( TerminalScreen const & screen )
 
     if ( screen.cursor_visible && ! has_cells )
     {
-        int const x = m_lines.x_margin( ) + screen.cursor_x * cell_width;
-        int const y = m_lines.y_margin( ) + screen.cursor_y * cell_height;
-        if ( x < ScreenWidth( ) && y < ScreenHeight( ) )
+        int const x = clip_x + screen.cursor_x * cell_width;
+        int const y = clip_y + screen.cursor_y * cell_height;
+        if ( x + cell_width <= clip_x + clip_w && y + cell_height <= clip_y + clip_h )
             FillArea( x, y, cell_width, cell_height, BLACK );
     }
 }
@@ -377,10 +438,14 @@ Display::terminal_geometry( ) const
     SetFont( m_font, BLACK );
 
     int const cell_width = std::max( 1, StringWidth( "M" ) );
-    int const cell_height = std::max( 1, font_height_px( m_font, m_font_size )
-                                         + m_lines.line_spacing( ) );
+    int const cell_height = cell_height_px( m_font,
+                                            m_font_size,
+                                            m_lines.line_spacing( ) );
     int const usable_width = std::max( 0, ScreenWidth( ) - 2 * m_lines.x_margin( ) );
-    int const usable_height = std::max( 0, ScreenHeight( ) - 2 * m_lines.y_margin( ) );
+    int const usable_height = std::max( 0, ScreenHeight( )
+                                           - 2 * m_lines.y_margin( )
+                                           - bottom_clip_guard_px( m_font,
+                                                                   m_font_size ) );
 
     // Use the actual loaded font height, not only the requested font size.
     // On PocketBook the rendered font can be a few pixels taller than the
