@@ -26,6 +26,21 @@
 #include "Defaults.hpp"
 #include <algorithm>
 
+namespace
+{
+
+int
+font_height_px( ifont const * font,
+                int           fallback_size )
+{
+    if ( font && font->height > 0 )
+        return font->height;
+
+    return fallback_size;
+}
+
+}
+
 
 /******************************************
  * Constructor
@@ -186,15 +201,16 @@ Display::set_screen( TerminalScreen const & screen )
 void
 Display::draw_screen( TerminalScreen const & screen )
 {
-    int const cell_width = StringWidth( "M" );
-    int const cell_height = m_font_size + m_lines.line_spacing( );
+    int const cell_width = std::max( 1, StringWidth( "M" ) );
+    int const cell_height = std::max( 1, font_height_px( m_font, m_font_size )
+                                         + m_lines.line_spacing( ) );
 
     bool const has_cells = ! screen.cells.empty( );
 
     for ( std::size_t y = 0; y < screen.lines.size( ); ++y )
     {
         int const py = m_lines.y_margin( ) + static_cast< int >( y ) * cell_height;
-        if ( py >= ScreenHeight( ) )
+        if ( py + cell_height > ScreenHeight( ) - m_lines.y_margin( ) )
             break;
 
         if ( has_cells && y < screen.cells.size( ) )
@@ -203,7 +219,7 @@ Display::draw_screen( TerminalScreen const & screen )
             for ( std::size_t x_cell = 0; x_cell < row.size( ); ++x_cell )
             {
                 int const px = m_lines.x_margin( ) + static_cast< int >( x_cell ) * cell_width;
-                if ( px >= ScreenWidth( ) )
+                if ( px + cell_width > ScreenWidth( ) - m_lines.x_margin( ) )
                     break;
 
                 TerminalCell const & cell = row[ x_cell ];
@@ -361,12 +377,22 @@ Display::terminal_geometry( ) const
     SetFont( m_font, BLACK );
 
     int const cell_width = std::max( 1, StringWidth( "M" ) );
-    int const cell_height = std::max( 1, m_font_size + m_lines.line_spacing( ) );
+    int const cell_height = std::max( 1, font_height_px( m_font, m_font_size )
+                                         + m_lines.line_spacing( ) );
     int const usable_width = std::max( 0, ScreenWidth( ) - 2 * m_lines.x_margin( ) );
     int const usable_height = std::max( 0, ScreenHeight( ) - 2 * m_lines.y_margin( ) );
 
+    // Use the actual loaded font height, not only the requested font size.
+    // On PocketBook the rendered font can be a few pixels taller than the
+    // requested size. If we advertise too many terminal rows, DrawString()
+    // can draw the bottom rows partially off-screen; on-device that shows up
+    // as the last rows wrapping/ghosting at the top of the display. Keep the
+    // PTY/Ghostty geometry to rows that fully fit inside the drawable area.
     geometry.cols = static_cast< uint16_t >( std::max( 20, usable_width / cell_width ) );
     geometry.rows = static_cast< uint16_t >( std::max( 5, usable_height / cell_height ) );
+    geometry.cell_width_px = static_cast< uint32_t >( cell_width );
+    geometry.cell_height_px = static_cast< uint32_t >( cell_height );
+
 
     return geometry;
 }

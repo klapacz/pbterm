@@ -7,6 +7,8 @@ struct TerminalGeometry
 {
     uint16_t cols = 80;
     uint16_t rows = 24;
+    uint32_t cell_width_px = 1;
+    uint32_t cell_height_px = 1;
 };
 
 #endif

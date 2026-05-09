@@ -88,6 +88,14 @@ Term::Term( Messenger & mess,
 {
     s_handling_term = this;
 
+    // Apply display cell pixel metrics immediately as well as columns/rows.
+    // The constructor already used cols/rows, but resize lets Ghostty know the
+    // actual cell pixel size derived from the loaded PocketBook font.
+    m_ghostty.resize( geometry.cols,
+                      geometry.rows,
+                      geometry.cell_width_px,
+                      geometry.cell_height_px );
+
     // Start the shell, abort on any failures
 
     if ( start_shell( config.shell( ) ) <= 0 )
@@ -246,7 +254,10 @@ Term::resize( TerminalGeometry geometry )
     if ( geometry.cols == 0 || geometry.rows == 0 )
         return;
 
-    if ( ! m_ghostty.resize( geometry.cols, geometry.rows ) )
+    if ( ! m_ghostty.resize( geometry.cols,
+                              geometry.rows,
+                              geometry.cell_width_px,
+                              geometry.cell_height_px ) )
         return;
 
     if ( using_pty( ) )
