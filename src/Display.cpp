@@ -141,6 +141,19 @@ Display::add_text( std::string const & str )
 }
 
 
+/******************************************
+ * Replaces all text shown on the display
+ ******************************************/
+
+void
+Display::set_text( std::string const & str )
+{
+    SetFont( m_font, BLACK );
+    m_lines.set( str );
+    Repaint( );
+}
+
+
 /***************************************
  * Called when the user makes a swipe gesture to scroll up or down
  ***************************************/

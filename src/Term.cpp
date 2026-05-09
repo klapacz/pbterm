@@ -156,7 +156,28 @@ void
 Term::send_command( std::string const & cmd )
 {
     if ( send( cmd.c_str( ), cmd.size( ) ) )
+    {
+        // The current PTY setup disables echo, so keep local command echoing
+        // but route it through Ghostty's screen model instead of directly
+        // appending to the legacy text buffer.
+        //
+        // A terminal line-feed moves the cursor down, but does not imply a
+        // carriage-return. Shell output normally arrives as CRLF through the
+        // PTY's ONLCR processing; mirror that for our local echo so Ghostty
+        // starts the next line at column zero instead of continuing diagonally.
+        std::string echo;
+        echo.reserve( cmd.size( ) + 1 );
+        for ( std::string::const_iterator it = cmd.begin( );
+              it != cmd.end( ); ++it )
+        {
+            if ( *it == '\n' )
+                echo += '\r';
+            echo += *it;
+        }
+        m_ghostty.write( echo.c_str( ), echo.size( ) );
+        send_ghostty_screen( );
         save_command( cmd.substr( 0, cmd.size( ) - 1 ) );
+    }
 }
 
 
@@ -237,16 +258,13 @@ Term::timer_handler( )
     }
     else if ( retval > 0 )
     {
-        // Feed the shell output into Ghostty's VT state first. The existing
-        // raw-text renderer remains active for now; the next integration step
-        // will render Ghostty's grid through InkView.
+        // Feed the shell output into Ghostty's VT state and redraw from the
+        // terminal grid. Recording still gets the original byte stream.
 
         m_ghostty.write( txt.data( ), txt.size( ) );
 
-        // Pass on any new text to the display and, if recording is on,
-        // write it to the log file
-
-        m_mess.send( message::New_Text( txt ) );
+        m_mess.send( message::New_Text( std::string( ) ) );
+        send_ghostty_screen( );
     }
 
     // (Re)start the timer that gets us back here for more
@@ -435,8 +453,9 @@ Term::open_master_pty( std::string & slave_name )
     slave_name = sn;
 
     // Switch off echoing, otherwise we would read back everything we're
-    // sending to the pseudoterminal. And we don't want a carriage added
-    // to each newline we receive.
+    // sending to the pseudoterminal. Keep output post-processing enabled:
+    // a real terminal receives CRLF for newlines, while bare LF in a VT moves
+    // down without returning to column zero.
 
     struct termios tp;
 
@@ -449,7 +468,6 @@ Term::open_master_pty( std::string & slave_name )
     }
 
     tp.c_lflag &= ~ ECHO;
-    tp.c_oflag &= ~ ONLCR;
 
     if ( tcsetattr( fd, TCSANOW, &tp ) == -1 )
     {
@@ -630,6 +648,14 @@ Term::start_piped_shell( std::string const & shell )
 /******************************************                                     
  * Tries to read as many data as are available from the shell
  ******************************************/
+
+void
+Term::send_ghostty_screen( )
+{
+    std::string screen = m_ghostty.screen_text( );
+    m_mess.send( message::Set_Text( screen ) );
+}
+
 
 ssize_t
 Term::get_shell_output( std::string & reply )

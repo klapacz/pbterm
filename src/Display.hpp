@@ -57,6 +57,10 @@ class Display
 
 
     void
+    set_text( std::string const & str );
+
+
+    void
     shift( int amount );
 
 

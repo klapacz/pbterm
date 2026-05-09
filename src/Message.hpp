@@ -57,6 +57,18 @@ struct message
     };
 
 
+    // Message sent when the complete terminal screen should be redrawn
+
+    struct Set_Text
+    {
+        Set_Text( std::string const & str )
+            : text( str )
+        { }
+
+        std::string const & text;
+    };
+
+
     // Message sent to request a vertical shift of the display
 
     struct Shift_Display

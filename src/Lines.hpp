@@ -66,6 +66,12 @@ class Lines
     add( std::string const & txt );
 
 
+    // Replaces all stored lines with the given text
+
+    void
+    set( std::string const & txt );
+
+
     // Informs the object about new sceen dimensions
 
     void

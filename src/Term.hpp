@@ -116,6 +116,10 @@ class Term
     get_shell_output( std::string & reply );
 
 
+    void
+    send_ghostty_screen( );
+
+
     // Messenger object we have to notify about new shell output
 
     Messenger & m_mess;
@@ -143,9 +147,8 @@ class Term
     Logger & m_logger;
 
 
-    // Ghostty terminal state that consumes all PTY/shell output.
-    // The legacy display still receives the raw text until Ghostty grid
-    // rendering is wired into InkView.
+    // Ghostty terminal state that consumes all PTY/shell output and now
+    // provides the text snapshot used by the display.
 
     GhosttyTerminalState m_ghostty;
 

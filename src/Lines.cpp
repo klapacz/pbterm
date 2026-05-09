@@ -33,6 +33,9 @@
 void
 Lines::add( std::string const & txt )
 {
+    if ( txt.empty( ) )
+        return;
+
     // Split the input into lines at line feeds
 
     std::vector< std::string > lines = Utils::split_string( txt, "\n" );
@@ -84,6 +87,24 @@ Lines::add( std::string const & txt )
     // Let's see how long the complete new text is
 
     recalc_height( );
+}
+
+
+/***************************************
+ * Replaces all stored lines with new text. Used by the Ghostty-backed
+ * renderer path, where the terminal core owns the screen contents.
+ ***************************************/
+
+void
+Lines::set( std::string const & txt )
+{
+    m_lines.clear( );
+    m_is_unfinished_line = false;
+
+    if ( ! txt.empty( ) )
+        add( txt );
+    else
+        recalc_height( );
 }
 
 

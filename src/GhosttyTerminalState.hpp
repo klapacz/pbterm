@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #define GHOSTTY_STATIC 1
 #include <ghostty/vt.h>
@@ -26,6 +27,8 @@ class GhosttyTerminalState
 
     void write( char const * data,
                 std::size_t len );
+
+    std::string screen_text( ) const;
 
     GhosttyTerminal terminal( ) const;
 

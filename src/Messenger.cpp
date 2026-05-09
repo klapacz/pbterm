@@ -140,6 +140,18 @@ Messenger::send< message::New_Text >( message::New_Text const & mess )
 
 
 /******************************************
+ * Receives the complete terminal screen text from the Ghostty-backed model
+ ******************************************/
+
+template < >
+void
+Messenger::send< message::Set_Text >( message::Set_Text const & mess )
+{
+    m_display->set_text( mess.text );
+}
+
+
+/******************************************
  * Receives the "Command" messages, sent when the user entered a new command
  * Sends it to the shell, displays on on the screen and logs it if appropriate.
  ******************************************/
@@ -149,7 +161,6 @@ void
 Messenger::send< message::New_Command >( message::New_Command const & mess )
 {
     m_term->send_command( mess.cmd );
-    m_display->add_text( mess.cmd );
     if ( m_is_recording )
         *m_logger << mess.cmd;
 }
