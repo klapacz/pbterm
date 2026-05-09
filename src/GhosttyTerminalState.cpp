@@ -241,7 +241,7 @@ GhosttyTerminalState::screen( )
          || ghostty_render_state_row_cells_new( nullptr, &cells ) != GHOSTTY_SUCCESS
          || ghostty_render_state_get( m_render_state,
                                       GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR,
-                                      rows ) != GHOSTTY_SUCCESS )
+                                      &rows ) != GHOSTTY_SUCCESS )
     {
         if ( cells )
             ghostty_render_state_row_cells_free( cells );
@@ -260,7 +260,7 @@ GhosttyTerminalState::screen( )
 
         if ( ghostty_render_state_row_get( rows,
                                            GHOSTTY_RENDER_STATE_ROW_DATA_CELLS,
-                                           cells ) == GHOSTTY_SUCCESS )
+                                           &cells ) == GHOSTTY_SUCCESS )
         {
             for ( uint16_t x = 0; x < screen.cols; ++x )
             {

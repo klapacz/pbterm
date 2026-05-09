@@ -125,6 +125,40 @@
           '';
         };
 
+        ghostty-vt-host = pkgs.stdenv.mkDerivation {
+          pname = "ghostty-vt-host";
+          version = "0.1.0-${ghosttyShortRev}";
+          src = ghosttySrc;
+          nativeBuildInputs = [ pkgs.git pkgs.pkg-config pkgs.zig_0_15 ];
+          dontConfigure = true;
+          dontSetZigDefaultFlags = true;
+          buildPhase = ''
+            runHook preBuild
+            export HOME=$TMPDIR
+            zig build \
+              --system ${ghosttyZigDeps} \
+              -Demit-lib-vt=true \
+              -Dlib-version-string=0.1.0-dev+${ghosttyShortRev}-nix \
+              -Dcpu=baseline \
+              -Dsimd=false \
+              -Doptimize=ReleaseFast \
+              -Dapp-runtime=none \
+              --cache-dir "$TMPDIR/zig-cache" \
+              --global-cache-dir "$TMPDIR/zig-global-cache"
+            runHook postBuild
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/lib $out/include $out/share/pkgconfig
+            cp zig-out/lib/libghostty-vt.a $out/lib/
+            cp -R zig-out/include/ghostty $out/include/
+            if [ -d zig-out/share/pkgconfig ]; then
+              cp zig-out/share/pkgconfig/*.pc $out/share/pkgconfig/
+            fi
+            runHook postInstall
+          '';
+        };
+
         default = pkgs.stdenv.mkDerivation {
           pname = "pbterm";
           version = "0.0.1";
@@ -225,6 +259,41 @@
             runHook preInstall
             mkdir -p $out/bin
             cp terminal-screen-state-test $out/bin/
+            runHook postInstall
+          '';
+        };
+
+        ghostty-terminal-state = pkgs.stdenv.mkDerivation {
+          pname = "ghostty-terminal-state-test";
+          version = "0.0.1";
+          src = self;
+          nativeBuildInputs = [ pkgs.pkg-config ];
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            $CXX -std=c++17 \
+              -DGHOSTTY_STATIC=1 \
+              -I$src/src \
+              -I${self.packages.${system}.ghostty-vt-host}/include \
+              $src/src/GhosttyTerminalState.cpp \
+              $src/src/Logger.cpp \
+              $src/src/Utils.cpp \
+              $src/tests/GhosttyTerminalStateTest.cpp \
+              ${self.packages.${system}.ghostty-vt-host}/lib/libghostty-vt.a \
+              -lpthread \
+              -o ghostty-terminal-state-test
+            runHook postBuild
+          '';
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            ./ghostty-terminal-state-test
+            runHook postCheck
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/bin
+            cp ghostty-terminal-state-test $out/bin/
             runHook postInstall
           '';
         };
