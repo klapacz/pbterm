@@ -107,7 +107,6 @@ Display::Display( Messenger & mess,
     , m_is_output_suspended( false )
     , m_is_redraw_needed( false )
     , m_is_recording( false )
-    , m_logger( &config.logger( ) )
 {
     OpenScreen( );
 
@@ -274,45 +273,11 @@ Display::draw_screen( TerminalScreen const & screen )
 
     bool const has_cells = ! screen.cells.empty( );
 
-    if ( m_logger && ! m_debug.logged )
-    {
-        m_debug.screen_w      = ScreenWidth( );
-        m_debug.screen_h      = ScreenHeight( );
-        m_debug.orientation   = GetOrientation( );
-        m_debug.font_h        = font_height_px( m_font, m_font_size );
-        m_debug.cell_w        = cell_width;
-        m_debug.cell_h        = cell_height;
-        m_debug.bottom_guard  = bottom_clip_guard_px( m_font, m_font_size );
-        m_debug.clip_x        = clip_x;
-        m_debug.clip_y        = clip_y;
-        m_debug.clip_w        = clip_w;
-        m_debug.clip_h        = clip_h;
-        m_debug.rows_in_screen = static_cast< int >( screen.lines.size( ) );
-        m_logger->info( ) << "DEBUG draw_screen: screen=" << m_debug.screen_w
-                          << "x" << m_debug.screen_h
-                          << " orient=" << m_debug.orientation
-                          << " font_h=" << m_debug.font_h
-                          << " cell=" << m_debug.cell_w << "x" << m_debug.cell_h
-                          << " guard=" << m_debug.bottom_guard
-                          << " clip=(" << clip_x << "," << clip_y
-                          << "," << clip_w << "," << clip_h << ")"
-                          << " rows_in_screen=" << m_debug.rows_in_screen
-                          << " screen.cols=" << screen.cols
-                          << " screen.rows=" << screen.rows
-                          << " cursor=(" << screen.cursor_x << "," << screen.cursor_y << ")"
-                          << " cursor_visible=" << screen.cursor_visible
-                          << std::endl;
-    }
-
-    int rows_drawn = 0;
-
     for ( std::size_t y = 0; y < screen.lines.size( ); ++y )
     {
         int const py = clip_y + static_cast< int >( y ) * cell_height;
         if ( py + cell_height > clip_y + clip_h )
             break;
-
-        ++rows_drawn;
 
         if ( has_cells && y < screen.cells.size( ) )
         {
@@ -378,24 +343,6 @@ Display::draw_screen( TerminalScreen const & screen )
         if ( x + cell_width <= clip_x + clip_w && y + cell_height <= clip_y + clip_h )
             FillArea( x, y, cell_width, cell_height, BLACK );
     }
-
-    if ( m_logger && ! m_debug.logged )
-    {
-        m_debug.rows_drawn = rows_drawn;
-        m_debug.logged     = true;
-        m_logger->info( ) << "DEBUG draw_screen: rows_drawn=" << rows_drawn
-                          << std::endl;
-    }
-
-    // Visible debug border around the clip rectangle so we can see on the
-    // device exactly where pbterm thinks the terminal drawable area is. If
-    // any wrapped/ghosted rows appear outside this rectangle, the issue is at
-    // the framebuffer level (ScreenHeight mismatch / wrap). If they appear
-    // inside it, the issue is row-count or cell-height math.
-    DrawLine( clip_x,              clip_y,              clip_x + clip_w - 1, clip_y,              BLACK );
-    DrawLine( clip_x,              clip_y + clip_h - 1, clip_x + clip_w - 1, clip_y + clip_h - 1, BLACK );
-    DrawLine( clip_x,              clip_y,              clip_x,              clip_y + clip_h - 1, BLACK );
-    DrawLine( clip_x + clip_w - 1, clip_y,              clip_x + clip_w - 1, clip_y + clip_h - 1, BLACK );
 }
 
 

@@ -34,23 +34,6 @@
 class Config;
 class Messenger;
 class Logger;
-struct DisplayDebug
-{
-    int screen_w = 0;
-    int screen_h = 0;
-    int orientation = 0;
-    int font_h = 0;
-    int cell_w = 0;
-    int cell_h = 0;
-    int bottom_guard = 0;
-    int clip_x = 0;
-    int clip_y = 0;
-    int clip_w = 0;
-    int clip_h = 0;
-    int rows_drawn = 0;
-    int rows_in_screen = 0;
-    bool logged = false;
-};
 
 
 /******************************************
@@ -168,16 +151,6 @@ class Display
     // Flag, set while recording is switched on
 
     bool m_is_recording;
-
-
-    // Logger reference for one-shot debug dumps from draw_screen()
-
-    Logger * m_logger;
-
-
-    // One-shot debug snapshot of the geometry the renderer is using
-
-    DisplayDebug m_debug;
 };
 
 
