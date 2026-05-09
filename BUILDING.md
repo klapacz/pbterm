@@ -14,7 +14,17 @@ The built app is available at:
 result/bin/pbterm.app
 ```
 
-The default app build now links `libghostty-vt.a` and runs a tiny startup smoke test that creates and frees a Ghostty terminal. This is only a proof of integration; pbterm's renderer has not been replaced yet.
+The default app build now links `libghostty-vt.a`; pbterm feeds PTY output into Ghostty VT and redraws from Ghostty's terminal grid snapshot.
+
+## Tests
+
+Run host-side tests without copying anything to the PocketBook:
+
+```sh
+nix flake check -L
+```
+
+This includes a native unit test for terminal byte normalization, specifically checking that every bare `\n` is converted to `\r\n` before being fed into Ghostty VT while existing `\r\n` sequences are preserved. That catches the diagonal-output regression locally.
 
 ## Ghostty VT ARM proof build
 

@@ -24,7 +24,9 @@
 #include "Logger.hpp"
 #include "Utils.hpp"
 #include "Defaults.hpp"
+#include "TerminalBytes.hpp"
 #include <cerrno>
+#include <cstdlib>
 #include <fstream>
 #include <unistd.h>
 #include <termios.h>
@@ -165,15 +167,7 @@ Term::send_command( std::string const & cmd )
         // carriage-return. Shell output normally arrives as CRLF through the
         // PTY's ONLCR processing; mirror that for our local echo so Ghostty
         // starts the next line at column zero instead of continuing diagonally.
-        std::string echo;
-        echo.reserve( cmd.size( ) + 1 );
-        for ( std::string::const_iterator it = cmd.begin( );
-              it != cmd.end( ); ++it )
-        {
-            if ( *it == '\n' )
-                echo += '\r';
-            echo += *it;
-        }
+        std::string echo = terminal_bytes::lf_to_crlf( cmd );
         m_ghostty.write( echo.c_str( ), echo.size( ) );
         send_ghostty_screen( );
         save_command( cmd.substr( 0, cmd.size( ) - 1 ) );
@@ -261,7 +255,13 @@ Term::timer_handler( )
         // Feed the shell output into Ghostty's VT state and redraw from the
         // terminal grid. Recording still gets the original byte stream.
 
-        m_ghostty.write( txt.data( ), txt.size( ) );
+        // On a normal terminal, the PTY slave's ONLCR output processing
+        // converts line-feed bytes from line-oriented programs into CRLF.
+        // Some PocketBook builds do not appear to apply that reliably for
+        // the bytes we read from the master side, so defensively normalize
+        // bare LF here as well. Existing CRLF is left untouched.
+        std::string normalized = terminal_bytes::lf_to_crlf( txt );
+        m_ghostty.write( normalized.data( ), normalized.size( ) );
 
         m_mess.send( message::New_Text( std::string( ) ) );
         send_ghostty_screen( );
@@ -522,6 +522,41 @@ Term::setup_child( std::string const & slave_name,
     }
 #endif
 
+    // Make the slave look like a normal terminal for line-oriented shell
+    // output. In particular, ONLCR turns '\n' written by programs into
+    // "\r\n" before it reaches the terminal emulator, so each new line starts
+    // in column zero. Keep echo disabled because pbterm echoes commands into
+    // Ghostty itself.
+
+    struct termios tp;
+    if ( tcgetattr( slave_fd, &tp ) == -1 )
+    {
+        close( slave_fd );
+        m_logger.error( ) << "tcgetattr() for slave failed: "
+                          << strerror( errno ) << std::endl;
+        return;
+    }
+
+    tp.c_lflag &= ~ ECHO;
+    tp.c_oflag |= OPOST | ONLCR;
+
+    if ( tcsetattr( slave_fd, TCSANOW, &tp ) == -1 )
+    {
+        close( slave_fd );
+        m_logger.error( ) << "tcsetattr() for slave failed: "
+                          << strerror( errno ) << std::endl;
+        return;
+    }
+
+    // Match the PTY size to the Ghostty terminal size. This is essential for
+    // SSH/tmux/TUI apps: cursor addressing only works if shell, PTY, terminal
+    // model, and renderer all agree on rows and columns.
+
+    struct winsize ws = { };
+    ws.ws_col = 80;
+    ws.ws_row = 24;
+    ioctl( slave_fd, TIOCSWINSZ, &ws );
+
     // Redirect the three standard file descritors to the slave
 
     if (   dup2( slave_fd, STDIN_FILENO  ) != STDIN_FILENO
@@ -539,8 +574,11 @@ Term::setup_child( std::string const & slave_name,
     for ( int i = STDERR_FILENO + 1; i < getdtablesize( ); i++ )
         close( i );
 
-    // Finally replace the process by the shell
+    // Finally replace the process by the shell. xterm-256color is a sane
+    // default for SSH/tmux and Ghostty's VT core understands its control
+    // sequences well enough for our renderer to consume the resulting grid.
 
+    setenv( "TERM", "xterm-256color", 1 );
     execlp( shell.c_str( ), shell.c_str( ), "-i", ( char * ) 0 );
 }
 
@@ -652,8 +690,8 @@ Term::start_piped_shell( std::string const & shell )
 void
 Term::send_ghostty_screen( )
 {
-    std::string screen = m_ghostty.screen_text( );
-    m_mess.send( message::Set_Text( screen ) );
+    TerminalScreen screen = m_ghostty.screen( );
+    m_mess.send( message::Set_Screen( screen ) );
 }
 
 

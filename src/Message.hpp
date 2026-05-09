@@ -34,6 +34,7 @@
 #include <string>
 #include <vector>
 #include "Inkview.hpp"
+#include "TerminalScreen.hpp"
 
 
 struct message
@@ -66,6 +67,18 @@ struct message
         { }
 
         std::string const & text;
+    };
+
+
+    // Message sent when the complete fixed-cell terminal screen should be redrawn
+
+    struct Set_Screen
+    {
+        Set_Screen( TerminalScreen const & screen )
+            : screen( screen )
+        { }
+
+        TerminalScreen const & screen;
     };
 
 

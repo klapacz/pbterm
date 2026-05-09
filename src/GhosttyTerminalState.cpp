@@ -41,6 +41,7 @@ GhosttyTerminalState::GhosttyTerminalState( Logger & logger,
                                             std::size_t max_scrollback )
     : m_logger( logger )
     , m_terminal( nullptr )
+    , m_render_state( nullptr )
 {
     GhosttyTerminalOptions options = { };
     options.cols = cols;
@@ -59,10 +60,19 @@ GhosttyTerminalState::GhosttyTerminalState( Logger & logger,
     else
         m_logger.info( ) << "Ghostty terminal state initialized: "
                          << cols << "x" << rows << std::endl;
+
+    if ( ghostty_render_state_new( nullptr, &m_render_state ) != GHOSTTY_SUCCESS )
+    {
+        m_render_state = nullptr;
+        m_logger.error( ) << "ghostty_render_state_new() failed" << std::endl;
+    }
 }
 
 GhosttyTerminalState::~GhosttyTerminalState( )
 {
+    if ( m_render_state )
+        ghostty_render_state_free( m_render_state );
+
     if ( m_terminal )
         ghostty_terminal_free( m_terminal );
 }
@@ -153,6 +163,61 @@ GhosttyTerminalState::screen_text( ) const
     }
 
     return out;
+}
+
+TerminalScreen
+GhosttyTerminalState::screen( )
+{
+    TerminalScreen screen;
+
+    if ( ! m_terminal )
+        return screen;
+
+    ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_COLS, &screen.cols );
+    ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_ROWS, &screen.rows );
+    ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_CURSOR_X, &screen.cursor_x );
+    ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_CURSOR_Y, &screen.cursor_y );
+    ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_CURSOR_VISIBLE, &screen.cursor_visible );
+
+    // Keep using direct grid reads for now rather than the old text snapshot
+    // path. This preserves terminal rows/columns exactly: rows are not
+    // trimmed, not wrapped, and leading/trailing spaces remain real cells.
+    screen.lines.reserve( screen.rows );
+
+    for ( uint16_t y = 0; y < screen.rows; ++y )
+    {
+        std::string line;
+        for ( uint16_t x = 0; x < screen.cols; ++x )
+        {
+            GhosttyPoint point = { };
+            point.tag = GHOSTTY_POINT_TAG_ACTIVE;
+            point.value.coordinate.x = x;
+            point.value.coordinate.y = y;
+
+            GhosttyGridRef ref = GHOSTTY_INIT_SIZED( GhosttyGridRef );
+            GhosttyCell cell = 0;
+            bool has_text = false;
+            uint32_t codepoint = 0;
+
+            if (    ghostty_terminal_grid_ref( m_terminal, point, &ref ) == GHOSTTY_SUCCESS
+                 && ghostty_grid_ref_cell( &ref, &cell ) == GHOSTTY_SUCCESS )
+            {
+                ghostty_cell_get( cell, GHOSTTY_CELL_DATA_HAS_TEXT, &has_text );
+                ghostty_cell_get( cell, GHOSTTY_CELL_DATA_CODEPOINT, &codepoint );
+            }
+
+            if ( has_text && codepoint != 0 )
+                append_utf8( line, codepoint );
+            else
+                line += ' ';
+        }
+        screen.lines.push_back( line );
+    }
+
+    if ( m_render_state )
+        ghostty_render_state_update( m_render_state, m_terminal );
+
+    return screen;
 }
 
 GhosttyTerminal

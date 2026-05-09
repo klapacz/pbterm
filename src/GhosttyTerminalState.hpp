@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <string>
 
+#include "TerminalScreen.hpp"
+
 #define GHOSTTY_STATIC 1
 #include <ghostty/vt.h>
 
@@ -30,11 +32,14 @@ class GhosttyTerminalState
 
     std::string screen_text( ) const;
 
+    TerminalScreen screen( );
+
     GhosttyTerminal terminal( ) const;
 
   private:
     Logger & m_logger;
     GhosttyTerminal m_terminal;
+    GhosttyRenderState m_render_state;
 };
 
 #endif

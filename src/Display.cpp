@@ -154,6 +154,67 @@ Display::set_text( std::string const & str )
 }
 
 
+/******************************************
+ * Draws a fixed-size terminal cell grid. This is the Ghostty/TUI path:
+ * no wrapping, no trimming, no scrollback; each row and column maps to a
+ * stable screen position so cursor-addressed apps such as tmux can repaint
+ * cells in place.
+ ******************************************/
+
+void
+Display::set_screen( TerminalScreen const & screen )
+{
+    if ( m_is_output_suspended )
+    {
+        m_is_redraw_needed = true;
+        return;
+    }
+
+    ClearScreen( );
+    SetFont( m_font, BLACK );
+
+    int const cell_width = StringWidth( "M" );
+    int const cell_height = m_font_size + m_lines.line_spacing( );
+
+    for ( std::size_t y = 0; y < screen.lines.size( ); ++y )
+    {
+        int const py = m_lines.y_margin( ) + static_cast< int >( y ) * cell_height;
+        if ( py >= ScreenHeight( ) )
+            break;
+
+        std::string const & line = screen.lines[ y ];
+        std::size_t start = 0;
+        while ( start < line.size( ) )
+        {
+            std::size_t end = line.find( ' ', start );
+            if ( end == start )
+            {
+                ++start;
+                continue;
+            }
+            if ( end == std::string::npos )
+                end = line.size( );
+
+            int const px = m_lines.x_margin( ) + static_cast< int >( start ) * cell_width;
+            if ( px < ScreenWidth( ) )
+                DrawString( px, py, line.substr( start, end - start ).c_str( ) );
+
+            start = end;
+        }
+    }
+
+    if ( screen.cursor_visible )
+    {
+        int const x = m_lines.x_margin( ) + screen.cursor_x * cell_width;
+        int const y = m_lines.y_margin( ) + screen.cursor_y * cell_height;
+        if ( x < ScreenWidth( ) && y < ScreenHeight( ) )
+            FillArea( x, y, cell_width, cell_height, BLACK );
+    }
+
+    SoftUpdate( );
+}
+
+
 /***************************************
  * Called when the user makes a swipe gesture to scroll up or down
  ***************************************/

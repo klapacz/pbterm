@@ -26,6 +26,7 @@
 #include <vector>
 #include "Lines.hpp"
 #include "Inkview.hpp"
+#include "TerminalScreen.hpp"
 
 
 class Config;
@@ -58,6 +59,10 @@ class Display
 
     void
     set_text( std::string const & str );
+
+
+    void
+    set_screen( TerminalScreen const & screen );
 
 
     void

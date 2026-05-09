@@ -152,6 +152,18 @@ Messenger::send< message::Set_Text >( message::Set_Text const & mess )
 
 
 /******************************************
+ * Receives the complete fixed-cell terminal screen from Ghostty.
+ ******************************************/
+
+template < >
+void
+Messenger::send< message::Set_Screen >( message::Set_Screen const & mess )
+{
+    m_display->set_screen( mess.screen );
+}
+
+
+/******************************************
  * Receives the "Command" messages, sent when the user entered a new command
  * Sends it to the shell, displays on on the screen and logs it if appropriate.
  ******************************************/

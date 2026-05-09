@@ -145,6 +145,34 @@
         };
       };
 
+      checks.${system}.terminal-bytes = pkgs.stdenv.mkDerivation {
+        pname = "terminal-bytes-test";
+        version = "0.0.1";
+        src = self;
+        dontConfigure = true;
+        buildPhase = ''
+          runHook preBuild
+          $CXX -std=c++17 \
+            -I$src/src \
+            $src/src/TerminalBytes.cpp \
+            $src/tests/TerminalBytesTest.cpp \
+            -o terminal-bytes-test
+          runHook postBuild
+        '';
+        doCheck = true;
+        checkPhase = ''
+          runHook preCheck
+          ./terminal-bytes-test
+          runHook postCheck
+        '';
+        installPhase = ''
+          runHook preInstall
+          mkdir -p $out/bin
+          cp terminal-bytes-test $out/bin/
+          runHook postInstall
+        '';
+      };
+
       devShells.${system}.default = pkgs.mkShell {
         nativeBuildInputs = [ pkgs.cmake pkgs.gnumake pkgs.ninja pkgs.pkg-config pkgs.zig_0_15 ];
         POCKETBOOK_SDK = pocketbookSdk;
