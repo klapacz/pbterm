@@ -28,6 +28,7 @@
 #include "Inkview.hpp"
 #include "TerminalScreen.hpp"
 #include "TerminalScreenState.hpp"
+#include "TerminalGeometry.hpp"
 
 
 class Config;
@@ -83,6 +84,10 @@ class Display
 
     void
     recording_state_change( bool state );
+
+
+    TerminalGeometry
+    terminal_geometry( ) const;
 
 
   private :

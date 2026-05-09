@@ -23,6 +23,7 @@
 
 
 #include "GhosttyTerminalState.hpp"
+#include "TerminalGeometry.hpp"
 #include <string>
 #include <vector>
 
@@ -42,7 +43,8 @@ class Term
   public :
 
     Term( Messenger & mess,
-          Config    & config );
+          Config    & config,
+          TerminalGeometry geometry = TerminalGeometry( ) );
 
 
     ~Term( );
@@ -62,6 +64,10 @@ class Term
 
     void
     send_control( char crtl );
+
+
+    void
+    resize( TerminalGeometry geometry );
 
 
     std::vector< std::string > const &

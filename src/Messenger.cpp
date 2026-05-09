@@ -75,7 +75,7 @@ Messenger::Messenger( )
 
     // Prepare the terminal dealing with the shell
 
-    m_term = new Term( *this, config );
+    m_term = new Term( *this, config, m_display->terminal_geometry( ) );
 
     if ( m_is_shutting_down )
         return;
@@ -298,6 +298,8 @@ Messenger::send< message::Set_Orientation >(
                                         message::Set_Orientation const & mess )
 {
     m_display->rotate( mess.dir );
+    if ( m_term )
+        m_term->resize( m_display->terminal_geometry( ) );
     m_pointer_handler->display_size_change( ScreenWidth( ),
                                             ScreenHeight( ) );
     m_button_handler->orientation_change( GetOrientation( ) );

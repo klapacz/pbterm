@@ -75,13 +75,14 @@ try_make_ptmx_accessible( Logger & logger )
  ******************************************/
 
 Term::Term( Messenger & mess,
-            Config    & config )
+            Config    & config,
+            TerminalGeometry geometry )
     : m_mess( mess )
     , m_check_interval( config.check_interval( ) )
     , m_write_fd( -1 )
     , m_read_fd( -1 )
     , m_logger( config.logger( ) )
-    , m_ghostty( m_logger )
+    , m_ghostty( m_logger, geometry.cols, geometry.rows )
     , m_max_history( config.max_history( ) )
     , m_cmd_file( config.cmd_file( ) )
 {
@@ -232,6 +233,33 @@ void
 Term::send_control( char ctrl )
 {
     send( &ctrl, 1 );
+}
+
+
+/******************************************
+ * Resizes Ghostty and the backing PTY to match the visible screen cells.
+ ******************************************/
+
+void
+Term::resize( TerminalGeometry geometry )
+{
+    if ( geometry.cols == 0 || geometry.rows == 0 )
+        return;
+
+    if ( ! m_ghostty.resize( geometry.cols, geometry.rows ) )
+        return;
+
+    if ( using_pty( ) )
+    {
+        struct winsize ws = { };
+        ws.ws_col = geometry.cols;
+        ws.ws_row = geometry.rows;
+        if ( ioctl( m_write_fd, TIOCSWINSZ, &ws ) == -1 )
+            m_logger.warn( ) << "ioctl(TIOCSWINSZ) resize failed: "
+                             << strerror( errno ) << std::endl;
+    }
+
+    send_ghostty_screen( );
 }
 
 
@@ -588,8 +616,10 @@ Term::setup_child( std::string const & slave_name,
     // model, and renderer all agree on rows and columns.
 
     struct winsize ws = { };
-    ws.ws_col = 80;
-    ws.ws_row = 24;
+    ws.ws_col = 0;
+    ws.ws_row = 0;
+    ghostty_terminal_get( m_ghostty.terminal( ), GHOSTTY_TERMINAL_DATA_COLS, &ws.ws_col );
+    ghostty_terminal_get( m_ghostty.terminal( ), GHOSTTY_TERMINAL_DATA_ROWS, &ws.ws_row );
     ioctl( slave_fd, TIOCSWINSZ, &ws );
 
     // Redirect the three standard file descritors to the slave

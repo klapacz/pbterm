@@ -220,6 +220,32 @@ GhosttyTerminalState::screen( )
     return screen;
 }
 
+bool
+GhosttyTerminalState::resize( uint16_t cols,
+                              uint16_t rows,
+                              uint32_t cell_width_px,
+                              uint32_t cell_height_px )
+{
+    if ( ! m_terminal || cols == 0 || rows == 0 )
+        return false;
+
+    GhosttyResult const result = ghostty_terminal_resize( m_terminal,
+                                                          cols,
+                                                          rows,
+                                                          cell_width_px,
+                                                          cell_height_px );
+    if ( result != GHOSTTY_SUCCESS )
+    {
+        m_logger.error( ) << "ghostty_terminal_resize() failed: "
+                          << static_cast< int >( result ) << std::endl;
+        return false;
+    }
+
+    m_logger.info( ) << "Ghostty terminal resized: "
+                     << cols << "x" << rows << std::endl;
+    return true;
+}
+
 GhosttyTerminal
 GhosttyTerminalState::terminal( ) const
 {

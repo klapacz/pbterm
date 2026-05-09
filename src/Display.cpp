@@ -24,6 +24,7 @@
 #include "Logger.hpp"
 #include "Utils.hpp"
 #include "Defaults.hpp"
+#include <algorithm>
 
 
 /******************************************
@@ -305,6 +306,31 @@ Display::recording_state_change( bool state )
 {
     m_is_recording = state;
     redraw( );
+}
+
+
+/******************************************
+ * Returns the number of fixed terminal cells that fit on the current screen
+ * with the active orientation and font. This is intentionally display-owned:
+ * it uses the same margins and font metrics as draw_screen().
+ ******************************************/
+
+TerminalGeometry
+Display::terminal_geometry( ) const
+{
+    TerminalGeometry geometry;
+
+    SetFont( m_font, BLACK );
+
+    int const cell_width = std::max( 1, StringWidth( "M" ) );
+    int const cell_height = std::max( 1, m_font_size + m_lines.line_spacing( ) );
+    int const usable_width = std::max( 0, ScreenWidth( ) - 2 * m_lines.x_margin( ) );
+    int const usable_height = std::max( 0, ScreenHeight( ) - 2 * m_lines.y_margin( ) );
+
+    geometry.cols = static_cast< uint16_t >( std::max( 20, usable_width / cell_width ) );
+    geometry.rows = static_cast< uint16_t >( std::max( 5, usable_height / cell_height ) );
+
+    return geometry;
 }
 
 

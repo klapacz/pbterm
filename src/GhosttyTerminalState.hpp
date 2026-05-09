@@ -34,6 +34,11 @@ class GhosttyTerminalState
 
     TerminalScreen screen( );
 
+    bool resize( uint16_t cols,
+                 uint16_t rows,
+                 uint32_t cell_width_px = 1,
+                 uint32_t cell_height_px = 1 );
+
     GhosttyTerminal terminal( ) const;
 
   private:
