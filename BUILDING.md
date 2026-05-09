@@ -14,6 +14,24 @@ The built app is available at:
 result/bin/pbterm.app
 ```
 
+## Ghostty VT ARM proof build
+
+The flake also contains a reproducible proof build for Ghostty's VT/terminal core:
+
+```sh
+nix build .#ghostty-vt-arm --out-link result-ghostty
+```
+
+This builds Ghostty with Zig `0.15.2` for `arm-linux-gnueabi`, disables SIMD, and installs:
+
+```text
+result-ghostty/lib/libghostty-vt.a
+result-ghostty/include/ghostty/vt.h
+result-ghostty/share/pkgconfig/libghostty-vt-static.pc
+```
+
+Ghostty's Zig dependencies are provided through upstream's generated `build.zig.zon.nix` and passed with `zig build --system`, so the build does not rely on a mutable Zig global cache or network access inside the Nix sandbox.
+
 ## Development shell
 
 ```sh
