@@ -28,6 +28,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include <unistd.h>
 #include <termios.h>
 #include <sys/ioctl.h>
@@ -37,6 +38,35 @@
 // within static member functions
 
 Term * Term::s_handling_term;
+
+namespace
+{
+bool
+try_make_ptmx_accessible( Logger & logger )
+{
+    if ( access( "/dev/ptmx", R_OK | W_OK ) == 0 )
+        return true;
+
+    if ( access( "/mnt/secure/su", X_OK ) != 0 )
+    {
+        logger.warn() << "/dev/ptmx is not readable/writable and /mnt/secure/su is unavailable" << std::endl;
+        return false;
+    }
+
+    logger.info() << "/dev/ptmx is not readable/writable; trying root chmod fallback" << std::endl;
+    int rc = std::system( "/mnt/secure/su chmod 666 /dev/ptmx" );
+    if ( rc != 0 )
+    {
+        logger.warn() << "chmod 666 /dev/ptmx failed, rc=" << rc << std::endl;
+        return false;
+    }
+
+    bool ok = access( "/dev/ptmx", R_OK | W_OK ) == 0;
+    logger.info() << "/dev/ptmx access after chmod fallback: " << ( ok ? "ok" : "still denied" ) << std::endl;
+    return ok;
+}
+}
+
 
 
 /******************************************
@@ -186,6 +216,10 @@ Term::send_command( std::string const & cmd )
 void
 Term::send_input( std::string const & bytes )
 {
+    if ( bytes.empty( ) )
+        return;
+
+    m_logger.info( ) << "Terminal input bytes len=" << bytes.size( ) << std::endl;
     send( bytes.c_str(), bytes.size() );
 }
 
@@ -413,23 +447,34 @@ Term::open_master_pty( std::string & slave_name )
 
     if ( ( fd = posix_openpt( O_RDWR | O_NOCTTY | O_NONBLOCK ) ) == -1 )
     {
-        if ( errno == EACCES )
+        int first_errno = errno;
+
+        if ( first_errno == EACCES && try_make_ptmx_accessible( m_logger ) )
+            fd = posix_openpt( O_RDWR | O_NOCTTY | O_NONBLOCK );
+
+        if ( fd == -1 )
         {
-            m_logger.info( ) <<  "posix_openpt() failed due to permission "
-                             << "issues, trying to use pipes" << std::endl;
-            return -2;
+            errno = first_errno;
+            if ( errno == EACCES )
+            {
+                m_logger.info( ) <<  "posix_openpt() failed due to permission "
+                                 << "issues, trying to use pipes" << std::endl;
+                return -2;
+            }
+
+            if ( errno == ENOENT )
+            {
+                m_logger.info( ) <<  "posix_openpt() failed due to file not found "
+                                 << "issues, trying to use pipes" << std::endl;
+                return -2;
+            }
+
+            m_logger.error( ) <<  "posix_openpt() failed: "
+                              << strerror( errno ) << std::endl;
+            return -1;
         }
 
-        if ( errno == ENOENT )
-        {
-            m_logger.info( ) <<  "posix_openpt() failed due to file not found "
-                             << "issues, trying to use pipes" << std::endl;
-            return -2;
-        }
-
-        m_logger.error( ) <<  "posix_openpt() failed: "
-                          << strerror( errno ) << std::endl;
-        return -1;
+        m_logger.info( ) << "posix_openpt() succeeded after /dev/ptmx permission fix" << std::endl;
     }
 
     // According to TLPI calling grantpt() actually is not becessary on Linux,

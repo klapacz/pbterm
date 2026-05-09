@@ -174,6 +174,34 @@
           '';
         };
 
+        bluetooth-keyboard-discovery = pkgs.stdenv.mkDerivation {
+          pname = "bluetooth-keyboard-discovery-test";
+          version = "0.0.1";
+          src = self;
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            $CXX -std=c++17 \
+              -I$src/src \
+              $src/src/BluetoothKeyboardDiscovery.cpp \
+              $src/tests/BluetoothKeyboardDiscoveryTest.cpp \
+              -o bluetooth-keyboard-discovery-test
+            runHook postBuild
+          '';
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            ./bluetooth-keyboard-discovery-test
+            runHook postCheck
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/bin
+            cp bluetooth-keyboard-discovery-test $out/bin/
+            runHook postInstall
+          '';
+        };
+
         terminal-screen-state = pkgs.stdenv.mkDerivation {
           pname = "terminal-screen-state-test";
           version = "0.0.1";

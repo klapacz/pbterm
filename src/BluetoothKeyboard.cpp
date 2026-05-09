@@ -1,7 +1,9 @@
 #include "BluetoothKeyboard.hpp"
+#include "BluetoothKeyboardDiscovery.hpp"
 #include "Messenger.hpp"
 #include "Message.hpp"
 #include "Inkview.hpp"
+#include "Logger.hpp"
 
 #include <linux/input.h>
 #include <sys/stat.h>
@@ -14,32 +16,11 @@
 #include <fstream>
 #include <sstream>
 #include <cstdlib>
+#include <iomanip>
 #include <thread>
 
 namespace
 {
-int parse_event_id( std::string const & handlers )
-{
-    auto pos = handlers.find( "event" );
-    if ( pos == std::string::npos )
-        return -1;
-    pos += 5;
-    auto end = pos;
-    while ( end < handlers.size() && handlers[end] >= '0' && handlers[end] <= '9' )
-        ++end;
-    if ( end == pos )
-        return -1;
-    return std::stoi( handlers.substr( pos, end - pos ) );
-}
-
-bool has_keyboard_ev_bits( std::string const & line )
-{
-    return line.find( "EV=" ) != std::string::npos &&
-           ( line.find( "120013" ) != std::string::npos ||
-             line.find( "100013" ) != std::string::npos ||
-             line.find( "1f" ) != std::string::npos );
-}
-
 std::map<int, char> const normal = {
     { KEY_1, '1' }, { KEY_2, '2' }, { KEY_3, '3' }, { KEY_4, '4' }, { KEY_5, '5' },
     { KEY_6, '6' }, { KEY_7, '7' }, { KEY_8, '8' }, { KEY_9, '9' }, { KEY_0, '0' },
@@ -69,47 +50,71 @@ std::map<int, char> const shifted = {
 };
 }
 
-BluetoothKeyboard::BluetoothKeyboard( Messenger & mess )
-    : m_mess( mess ), m_stop( false ), m_shift( false ), m_ctrl( false ), m_altgr( false )
+BluetoothKeyboard::BluetoothKeyboard( Messenger & mess, Logger & logger )
+    : m_mess( mess )
+    , m_logger( logger )
+    , m_stop( false )
+    , m_shift( false )
+    , m_ctrl( false )
+    , m_altgr( false )
+    , m_logged_no_keyboard( false )
+    , m_logged_event_id( -1 )
 {
-    Device device;
-    if ( find_keyboard( device ) && ensure_device_node( device ) )
-        m_thread = std::thread( &BluetoothKeyboard::run, this, device );
+    m_logger.info() << "Bluetooth keyboard worker starting" << std::endl;
+    ensure_bluetooth_awake();
+    m_thread = std::thread( &BluetoothKeyboard::run, this );
 }
 
 BluetoothKeyboard::~BluetoothKeyboard()
 {
+    m_logger.info() << "Bluetooth keyboard worker stopping" << std::endl;
     m_stop = true;
     if ( m_thread.joinable() )
         m_thread.join();
 }
 
+void BluetoothKeyboard::ensure_bluetooth_awake()
+{
+    if ( IsBluetoothEnabled() == 0 )
+    {
+        m_logger.info() << "Bluetooth is disabled; requesting enable" << std::endl;
+        SetBluetoothOn();
+    }
+
+    if ( IsBluetoothAwake() == 0 )
+    {
+        m_logger.info() << "Bluetooth is asleep; requesting wakeup" << std::endl;
+        BluetoothWakeUp();
+    }
+}
+
 bool BluetoothKeyboard::find_keyboard( Device & out )
 {
-    if ( IsBluetoothEnabled() == 0 ) SetBluetoothOn();
-    if ( IsBluetoothAwake() == 0 ) BluetoothWakeUp();
-
     std::ifstream in( "/proc/bus/input/devices" );
-    std::string line;
-    Device temp;
-    bool is_bt = false, has_kbd = false, has_ev = false;
-
-    auto flush = [&]() -> bool {
-        if ( ! temp.name.empty() && is_bt && has_kbd && has_ev && temp.event_id >= 0 )
-        { out = temp; return true; }
-        temp = Device(); is_bt = has_kbd = has_ev = false; return false;
-    };
-
-    while ( std::getline( in, line ) )
+    auto devices = bluetooth_keyboard_discovery::parse_bluetooth_keyboards( in );
+    if ( devices.empty() )
     {
-        if ( line.empty() ) { if ( flush() ) return true; continue; }
-        if ( line[0] == 'I' ) is_bt = line.find( "Bus=0005" ) != std::string::npos;
-        else if ( line[0] == 'N' ) temp.name = line.substr( line.find( '=' ) + 1 );
-        else if ( line[0] == 'S' ) temp.sysfs = line.substr( line.find( '=' ) + 1 );
-        else if ( line[0] == 'H' ) { has_kbd = line.find( "kbd" ) != std::string::npos; temp.event_id = parse_event_id( line ); }
-        else if ( line[0] == 'B' ) has_ev = has_ev || has_keyboard_ev_bits( line );
+        if ( ! m_logged_no_keyboard )
+        {
+            m_logger.info() << "No Bluetooth keyboard found in /proc/bus/input/devices; will retry" << std::endl;
+            m_logged_no_keyboard = true;
+            m_logged_event_id = -1;
+        }
+        return false;
     }
-    return flush();
+
+    out = devices.front();
+    m_logged_no_keyboard = false;
+
+    if ( out.event_id != m_logged_event_id )
+    {
+        m_logger.info() << "Using Bluetooth keyboard " << out.name
+                        << " sysfs=" << out.sysfs
+                        << " event" << out.event_id << std::endl;
+        m_logged_event_id = out.event_id;
+    }
+
+    return true;
 }
 
 bool BluetoothKeyboard::ensure_device_node( Device const & device )
@@ -118,6 +123,8 @@ bool BluetoothKeyboard::ensure_device_node( Device const & device )
     if ( access( path.c_str(), R_OK ) == 0 )
         return true;
 
+    m_logger.info() << path << " is not readable by pbterm; attempting root mknod fallback" << std::endl;
+
     std::ifstream uevent( "/sys" + device.sysfs + "/event" + std::to_string( device.event_id ) + "/uevent" );
     std::string line, major, minor;
     while ( std::getline( uevent, line ) )
@@ -125,21 +132,60 @@ bool BluetoothKeyboard::ensure_device_node( Device const & device )
         if ( line.find( "MAJOR=" ) == 0 ) major = line.substr( 6 );
         if ( line.find( "MINOR=" ) == 0 ) minor = line.substr( 6 );
     }
-    if ( major.empty() || minor.empty() || access( "/mnt/secure/su", R_OK ) != 0 )
+    if ( major.empty() || minor.empty() )
+    {
+        m_logger.warn() << "Could not read major/minor for " << path
+                        << " from /sys" << device.sysfs << std::endl;
         return false;
+    }
+
+    if ( access( "/mnt/secure/su", X_OK ) != 0 )
+    {
+        m_logger.warn() << "/mnt/secure/su is not executable; cannot create readable input node" << std::endl;
+        return false;
+    }
 
     std::string rm = "/mnt/secure/su rm " + path;
     std::string mk = "/mnt/secure/su mknod -m 664 " + path + " c " + major + " " + minor;
     std::system( rm.c_str() );
-    return std::system( mk.c_str() ) == 0;
+    int rc = std::system( mk.c_str() );
+    if ( rc != 0 )
+    {
+        m_logger.warn() << "Failed to create " << path << " with mknod, rc=" << rc << std::endl;
+        return false;
+    }
+
+    bool readable = access( path.c_str(), R_OK ) == 0;
+    m_logger.info() << "Created " << path << " readable=" << ( readable ? "yes" : "no" ) << std::endl;
+    return readable;
 }
 
-void BluetoothKeyboard::run( Device device )
+void BluetoothKeyboard::run()
+{
+    while ( ! m_stop )
+    {
+        ensure_bluetooth_awake();
+
+        Device device;
+        if ( find_keyboard( device ) && ensure_device_node( device ) )
+            read_device( device );
+
+        for ( int i = 0; i < 20 && ! m_stop; ++i )
+            std::this_thread::sleep_for( std::chrono::milliseconds( 100 ) );
+    }
+}
+
+void BluetoothKeyboard::read_device( Device device )
 {
     std::string path = "/dev/input/event" + std::to_string( device.event_id );
     int fd = open( path.c_str( ), O_RDONLY | O_NONBLOCK );
     if ( fd < 0 )
+    {
+        m_logger.warn() << "Failed to open " << path << ": " << strerror( errno ) << std::endl;
         return;
+    }
+
+    m_logger.info() << "Reading Bluetooth keyboard events from " << path << std::endl;
 
     input_event ev;
     while ( ! m_stop )
@@ -148,17 +194,25 @@ void BluetoothKeyboard::run( Device device )
         if ( n == static_cast<ssize_t>( sizeof ev ) )
         {
             if ( ev.type == EV_KEY )
-                send_bytes( translate_key( ev.code, ev.value != 0 ) );
+            {
+                std::string bytes = translate_key( ev.code, ev.value != 0 );
+                log_keyboard_event( ev.code, ev.value, bytes );
+                send_bytes( bytes );
+            }
             continue;
         }
 
         if ( n < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR )
+        {
+            m_logger.warn() << "Read from " << path << " failed: " << strerror( errno ) << std::endl;
             break;
+        }
 
         std::this_thread::sleep_for( std::chrono::milliseconds( 20 ) );
     }
 
     close( fd );
+    m_logger.info() << "Stopped reading Bluetooth keyboard events from " << path << std::endl;
 }
 
 std::string BluetoothKeyboard::translate_key( unsigned short code, bool press )
@@ -199,4 +253,21 @@ void BluetoothKeyboard::send_bytes( std::string const & bytes )
 {
     if ( ! bytes.empty() )
         m_mess.send( message::Terminal_Input( bytes ) );
+}
+
+void BluetoothKeyboard::log_keyboard_event( unsigned short code, int value, std::string const & bytes )
+{
+    m_logger.info() << "Bluetooth key event code=" << code
+                    << " value=" << value
+                    << " translated_len=" << bytes.size();
+
+    if ( ! bytes.empty() )
+    {
+        m_logger << " bytes=";
+        for ( unsigned char c : bytes )
+            m_logger << "0x" << std::hex << std::setw( 2 ) << std::setfill( '0' )
+                     << static_cast<int>( c ) << std::dec << std::setfill( ' ' ) << ' ';
+    }
+
+    m_logger << std::endl;
 }

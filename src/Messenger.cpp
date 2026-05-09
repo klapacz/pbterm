@@ -89,7 +89,7 @@ Messenger::Messenger( )
     m_kbd_handler      = new Keyboard_Handler( *this, config );
     m_menu_handler     = new Menu_Handler( *this, config );
     m_rotation_handler = new Rotation_Handler( *this, config );
-    m_bluetooth_keyboard = new BluetoothKeyboard( *this );
+    m_bluetooth_keyboard = new BluetoothKeyboard( *this, *m_logger );
 }
 
 
