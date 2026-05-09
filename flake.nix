@@ -145,32 +145,61 @@
         };
       };
 
-      checks.${system}.terminal-bytes = pkgs.stdenv.mkDerivation {
-        pname = "terminal-bytes-test";
-        version = "0.0.1";
-        src = self;
-        dontConfigure = true;
-        buildPhase = ''
-          runHook preBuild
-          $CXX -std=c++17 \
-            -I$src/src \
-            $src/src/TerminalBytes.cpp \
-            $src/tests/TerminalBytesTest.cpp \
-            -o terminal-bytes-test
-          runHook postBuild
-        '';
-        doCheck = true;
-        checkPhase = ''
-          runHook preCheck
-          ./terminal-bytes-test
-          runHook postCheck
-        '';
-        installPhase = ''
-          runHook preInstall
-          mkdir -p $out/bin
-          cp terminal-bytes-test $out/bin/
-          runHook postInstall
-        '';
+      checks.${system} = {
+        terminal-bytes = pkgs.stdenv.mkDerivation {
+          pname = "terminal-bytes-test";
+          version = "0.0.1";
+          src = self;
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            $CXX -std=c++17 \
+              -I$src/src \
+              $src/src/TerminalBytes.cpp \
+              $src/tests/TerminalBytesTest.cpp \
+              -o terminal-bytes-test
+            runHook postBuild
+          '';
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            ./terminal-bytes-test
+            runHook postCheck
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/bin
+            cp terminal-bytes-test $out/bin/
+            runHook postInstall
+          '';
+        };
+
+        terminal-screen-state = pkgs.stdenv.mkDerivation {
+          pname = "terminal-screen-state-test";
+          version = "0.0.1";
+          src = self;
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            $CXX -std=c++17 \
+              -I$src/src \
+              $src/tests/TerminalScreenStateTest.cpp \
+              -o terminal-screen-state-test
+            runHook postBuild
+          '';
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            ./terminal-screen-state-test
+            runHook postCheck
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/bin
+            cp terminal-screen-state-test $out/bin/
+            runHook postInstall
+          '';
+        };
       };
 
       devShells.${system}.default = pkgs.mkShell {

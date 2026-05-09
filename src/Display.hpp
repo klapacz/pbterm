@@ -27,6 +27,7 @@
 #include "Lines.hpp"
 #include "Inkview.hpp"
 #include "TerminalScreen.hpp"
+#include "TerminalScreenState.hpp"
 
 
 class Config;
@@ -86,6 +87,10 @@ class Display
 
   private :
 
+    void
+    draw_screen( TerminalScreen const & screen );
+
+
     // Name of the font to use
 
     std::string m_font_name;
@@ -119,6 +124,13 @@ class Display
     // Object containing all lines
 
     Lines m_lines;
+
+
+    // Last Ghostty-backed fixed-cell terminal screen, if that renderer is
+    // currently active. This lets normal InkView redraw/repaint events redraw
+    // the same terminal grid instead of falling back to the legacy Lines path.
+
+    TerminalScreenState m_terminal_screen;
 
 
     // Flag, set when no redraws are to done

@@ -95,9 +95,15 @@ Display::redraw( )
     ClearScreen( );
     SetFont( m_font, BLACK );
 
-    // Get all (visible) lines to redraw themselves
+    // Get the active display model to redraw itself. Once the Ghostty/TUI
+    // screen path has been used, normal InkView repaint/show events must keep
+    // redrawing that fixed-cell grid. Falling back to the legacy Lines renderer
+    // here clears the visible terminal shortly after set_screen() paints it.
 
-    m_lines.redraw( );
+    if ( m_terminal_screen.has_screen( ) )
+        draw_screen( m_terminal_screen.screen( ) );
+    else
+        m_lines.redraw( );
 
     // Draw a little triangle in the upper right hand corner while recording
     // is switched on
@@ -136,6 +142,7 @@ Display::add_text( std::string const & str )
     // newly added lines
 
     SetFont( m_font, BLACK );
+    m_terminal_screen.clear( );
     m_lines.add( str );
     Repaint( );
 }
@@ -149,6 +156,7 @@ void
 Display::set_text( std::string const & str )
 {
     SetFont( m_font, BLACK );
+    m_terminal_screen.clear( );
     m_lines.set( str );
     Repaint( );
 }
@@ -164,15 +172,19 @@ Display::set_text( std::string const & str )
 void
 Display::set_screen( TerminalScreen const & screen )
 {
-    if ( m_is_output_suspended )
-    {
-        m_is_redraw_needed = true;
-        return;
-    }
+    m_terminal_screen.set_screen( screen );
+    redraw( );
+}
 
-    ClearScreen( );
-    SetFont( m_font, BLACK );
 
+/******************************************
+ * Draws the active fixed-cell terminal screen. The caller is responsible for
+ * clearing the screen, setting the font, and issuing the final SoftUpdate().
+ ******************************************/
+
+void
+Display::draw_screen( TerminalScreen const & screen )
+{
     int const cell_width = StringWidth( "M" );
     int const cell_height = m_font_size + m_lines.line_spacing( );
 
@@ -210,8 +222,6 @@ Display::set_screen( TerminalScreen const & screen )
         if ( x < ScreenWidth( ) && y < ScreenHeight( ) )
             FillArea( x, y, cell_width, cell_height, BLACK );
     }
-
-    SoftUpdate( );
 }
 
 

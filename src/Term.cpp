@@ -263,7 +263,6 @@ Term::timer_handler( )
         std::string normalized = terminal_bytes::lf_to_crlf( txt );
         m_ghostty.write( normalized.data( ), normalized.size( ) );
 
-        m_mess.send( message::New_Text( std::string( ) ) );
         send_ghostty_screen( );
     }
 
