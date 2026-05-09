@@ -22,6 +22,7 @@
 #define TERM_HPP_
 
 
+#include "GhosttyTerminalState.hpp"
 #include <string>
 #include <vector>
 
@@ -140,6 +141,13 @@ class Term
     // Object for logging
 
     Logger & m_logger;
+
+
+    // Ghostty terminal state that consumes all PTY/shell output.
+    // The legacy display still receives the raw text until Ghostty grid
+    // rendering is wired into InkView.
+
+    GhosttyTerminalState m_ghostty;
 
 
     // Maximum number of commands in history

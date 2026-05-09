@@ -63,6 +63,7 @@ SET (SRC_LIST
 	${CMAKE_SOURCE_DIR}/src/Messenger.cpp
     ${CMAKE_SOURCE_DIR}/src/Logger.cpp	
     ${CMAKE_SOURCE_DIR}/src/GhosttyProbe.cpp
+    ${CMAKE_SOURCE_DIR}/src/GhosttyTerminalState.cpp
     ${CMAKE_SOURCE_DIR}/src/Config.cpp
     ${CMAKE_SOURCE_DIR}/src/Term.cpp	
     ${CMAKE_SOURCE_DIR}/src/Display.cpp

@@ -49,6 +49,7 @@ Term::Term( Messenger & mess,
     , m_write_fd( -1 )
     , m_read_fd( -1 )
     , m_logger( config.logger( ) )
+    , m_ghostty( m_logger )
     , m_max_history( config.max_history( ) )
     , m_cmd_file( config.cmd_file( ) )
 {
@@ -236,6 +237,12 @@ Term::timer_handler( )
     }
     else if ( retval > 0 )
     {
+        // Feed the shell output into Ghostty's VT state first. The existing
+        // raw-text renderer remains active for now; the next integration step
+        // will render Ghostty's grid through InkView.
+
+        m_ghostty.write( txt.data( ), txt.size( ) );
+
         // Pass on any new text to the display and, if recording is on,
         // write it to the log file
 
