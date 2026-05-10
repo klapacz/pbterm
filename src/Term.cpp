@@ -96,6 +96,16 @@ Term::Term( Messenger & mess,
                       geometry.cell_width_px,
                       geometry.cell_height_px );
 
+    // Register the write-pty callback so Ghostty can send responses
+    // (e.g. cursor position reports) back to the child process.
+    GhosttyTerminalWritePtyFn write_fn = static_write_pty;
+    ghostty_terminal_set( m_ghostty.terminal( ),
+                          GHOSTTY_TERMINAL_OPT_USERDATA,
+                          this );
+    ghostty_terminal_set( m_ghostty.terminal( ),
+                          GHOSTTY_TERMINAL_OPT_WRITE_PTY,
+                          reinterpret_cast< void const * >( write_fn ) );
+
     // Start the shell, abort on any failures
 
     if ( start_shell( config.shell( ) ) <= 0 )
@@ -316,6 +326,19 @@ Term::static_timer_handler( )
 }
 
 
+void
+Term::static_write_pty( GhosttyTerminal /* terminal */,
+                        void           * userdata,
+                        uint8_t const  * data,
+                        size_t           len )
+{
+    Term * self = static_cast< Term * >( userdata );
+    if ( self && self->m_write_fd >= 0 && data && len > 0 )
+        self->send( reinterpret_cast< char const * >( data ),
+                    static_cast< int >( len ) );
+}
+
+
 /***************************************
  * Handler for timer events, checks if the shell send any new data
  ***************************************/
@@ -343,13 +366,11 @@ Term::timer_handler( )
         // Feed the shell output into Ghostty's VT state and redraw from the
         // terminal grid. Recording still gets the original byte stream.
 
-        // On a normal terminal, the PTY slave's ONLCR output processing
-        // converts line-feed bytes from line-oriented programs into CRLF.
-        // Some PocketBook builds do not appear to apply that reliably for
-        // the bytes we read from the master side, so defensively normalize
-        // bare LF here as well. Existing CRLF is left untouched.
-        std::string normalized = terminal_bytes::lf_to_crlf( txt );
-        m_ghostty.write( normalized.data( ), normalized.size( ) );
+        // Feed the terminal emulator the exact PTY byte stream. Do not
+        // normalize LF to CRLF here: full-screen TUIs may intentionally use
+        // LF/IND without carriage-return, and injecting CR can move later
+        // drawing to column 0 (seen with Helix completion popups).
+        m_ghostty.write( txt.data( ), txt.size( ) );
 
         send_ghostty_screen( );
     }

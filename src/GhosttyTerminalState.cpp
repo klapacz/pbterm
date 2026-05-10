@@ -204,6 +204,16 @@ GhosttyTerminalState::screen( )
     if ( ! m_terminal )
         return screen;
 
+    // Defer rendering while synchronized output (mode 2026) is active.
+    // Applications like Helix wrap frame updates in this mode; reading
+    // the grid mid-frame would capture a partially-drawn state.
+    bool sync_active = false;
+    if ( ghostty_terminal_mode_get( m_terminal,
+                                    GHOSTTY_MODE_SYNC_OUTPUT,
+                                    &sync_active ) == GHOSTTY_SUCCESS
+         && sync_active )
+        return screen;
+
     if ( ! m_render_state )
     {
         ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_COLS, &screen.cols );

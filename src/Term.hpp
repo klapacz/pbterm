@@ -83,6 +83,12 @@ class Term
     static void
     static_timer_handler( );
 
+    static void
+    static_write_pty( GhosttyTerminal terminal,
+                      void           * userdata,
+                      uint8_t const  * data,
+                      size_t           len );
+
 
     void
     timer_handler( );
