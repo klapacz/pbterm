@@ -75,7 +75,7 @@ class Display
     rotate( int dir );
 
 
-    void
+    bool
     change_font_size( int incr );
 
     void

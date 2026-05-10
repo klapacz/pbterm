@@ -83,6 +83,7 @@ Term::Term( Messenger & mess,
     , m_read_fd( -1 )
     , m_logger( config.logger( ) )
     , m_ghostty( m_logger, geometry.cols, geometry.rows )
+    , m_geometry( geometry )
     , m_max_history( config.max_history( ) )
     , m_cmd_file( config.cmd_file( ) )
 {
@@ -264,11 +265,16 @@ Term::resize( TerminalGeometry geometry )
     if ( geometry.cols == 0 || geometry.rows == 0 )
         return;
 
+    if ( geometry == m_geometry )
+        return;
+
     if ( ! m_ghostty.resize( geometry.cols,
                               geometry.rows,
                               geometry.cell_width_px,
                               geometry.cell_height_px ) )
         return;
+
+    m_geometry = geometry;
 
     if ( using_pty( ) )
     {

@@ -11,4 +11,21 @@ struct TerminalGeometry
     uint32_t cell_height_px = 1;
 };
 
+inline bool
+operator==( TerminalGeometry const & lhs,
+            TerminalGeometry const & rhs )
+{
+    return lhs.cols == rhs.cols
+        && lhs.rows == rhs.rows
+        && lhs.cell_width_px == rhs.cell_width_px
+        && lhs.cell_height_px == rhs.cell_height_px;
+}
+
+inline bool
+operator!=( TerminalGeometry const & lhs,
+            TerminalGeometry const & rhs )
+{
+    return ! ( lhs == rhs );
+}
+
 #endif

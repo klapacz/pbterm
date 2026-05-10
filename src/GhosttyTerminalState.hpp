@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 #include "TerminalScreen.hpp"
 
@@ -42,6 +43,9 @@ class GhosttyTerminalState
     GhosttyTerminal terminal( ) const;
 
   private:
+    void init_render_helpers( );
+    void free_render_helpers( );
+
     Logger & m_logger;
     GhosttyTerminal m_terminal;
     GhosttyRenderState m_render_state;

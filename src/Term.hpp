@@ -169,6 +169,11 @@ class Term
     GhosttyTerminalState m_ghostty;
 
 
+    // Last geometry successfully applied to Ghostty/the PTY.
+
+    TerminalGeometry m_geometry;
+
+
     // Maximum number of commands in history
 
     std::size_t m_max_history;

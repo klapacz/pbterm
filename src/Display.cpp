@@ -561,7 +561,7 @@ Display::rotate( int dir )
  * is the difference to the current font size)
  ***************************************/
 
-void
+bool
 Display::change_font_size( int incr )
 {
     int new_font_size  = m_font_size + incr;
@@ -575,12 +575,12 @@ Display::change_font_size( int incr )
         new_font_size = MAX_FONT_SIZE;
 
     if ( new_font_size == m_font_size )
-        return;
+        return false;
 
     ifont *new_font = OpenFont( m_font_name.c_str( ), new_font_size, 1 );
 
     if ( ! new_font )
-        return;
+        return false;
 
     CloseFont( m_font );
 
@@ -590,7 +590,8 @@ Display::change_font_size( int incr )
     SetFont( m_font, BLACK );
     m_lines.change_font_size( m_font_size );
     update_cell_metrics( );
-    Repaint( );
+
+    return true;
 }
 
 

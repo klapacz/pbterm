@@ -78,6 +78,23 @@ GhosttyTerminalState::GhosttyTerminalState( Logger & logger,
         m_logger.info( ) << "Ghostty terminal state initialized: "
                          << cols << "x" << rows << std::endl;
 
+    init_render_helpers( );
+}
+
+GhosttyTerminalState::~GhosttyTerminalState( )
+{
+    free_render_helpers( );
+    if ( m_terminal )
+        ghostty_terminal_free( m_terminal );
+}
+
+void
+GhosttyTerminalState::init_render_helpers( )
+{
+    m_render_state = nullptr;
+    m_row_iterator = nullptr;
+    m_row_cells = nullptr;
+
     if ( ghostty_render_state_new( nullptr, &m_render_state ) != GHOSTTY_SUCCESS )
     {
         m_render_state = nullptr;
@@ -95,7 +112,8 @@ GhosttyTerminalState::GhosttyTerminalState( Logger & logger,
     }
 }
 
-GhosttyTerminalState::~GhosttyTerminalState( )
+void
+GhosttyTerminalState::free_render_helpers( )
 {
     if ( m_row_cells )
         ghostty_render_state_row_cells_free( m_row_cells );
@@ -103,8 +121,10 @@ GhosttyTerminalState::~GhosttyTerminalState( )
         ghostty_render_state_row_iterator_free( m_row_iterator );
     if ( m_render_state )
         ghostty_render_state_free( m_render_state );
-    if ( m_terminal )
-        ghostty_terminal_free( m_terminal );
+
+    m_row_cells = nullptr;
+    m_row_iterator = nullptr;
+    m_render_state = nullptr;
 }
 
 bool
@@ -408,11 +428,21 @@ GhosttyTerminalState::resize( uint16_t cols,
     if ( ! m_terminal || cols == 0 || rows == 0 )
         return false;
 
+    // Render-state helper objects cache Ghostty's previous grid snapshot.
+    // Resizing the terminal can reallocate that grid, so drop the snapshot
+    // before resize and recreate it afterwards.  This also makes the next
+    // screen() call produce a fresh full-frame render instead of comparing
+    // against stale row/cell objects from the old geometry.
+    free_render_helpers( );
+    m_graphemes_buf.clear( );
+
     GhosttyResult const result = ghostty_terminal_resize( m_terminal,
                                                           cols,
                                                           rows,
                                                           cell_width_px,
                                                           cell_height_px );
+    init_render_helpers( );
+
     if ( result != GHOSTTY_SUCCESS )
     {
         m_logger.error( ) << "ghostty_terminal_resize() failed: "

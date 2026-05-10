@@ -267,7 +267,18 @@ void
 Messenger::send< message::Change_Font_Size >(
                                        message::Change_Font_Size const & mess )
 {
-    m_display->change_font_size( mess.difference * m_font_step );
+    if ( ! m_display->change_font_size( mess.difference * m_font_step ) )
+        return;
+
+    if ( m_term )
+        m_term->resize( m_display->terminal_geometry( ) );
+
+    // Force one full redraw using the new cell metrics. Term::resize() also
+    // requests a Ghostty-backed screen update, but Ghostty may report no dirty
+    // rows when only the pixel cell size changed or while synchronized output
+    // is active. A full redraw here keeps font changes deterministic and avoids
+    // leaving old-size glyphs in otherwise clean rows.
+    m_display->redraw( );
 }
 
 
