@@ -412,13 +412,17 @@ Display::update_screen_partial( TerminalScreen const & screen )
                              || prev.cursor_y        != screen.cursor_y
                              || prev.cursor_x        != screen.cursor_x;
 
-    ScopedClip scoped_clip( cx, cy, cw, ch );
-
     int dirty_top    = std::numeric_limits< int >::max( );
     int dirty_bottom = 0;
 
     std::size_t const n_rows = std::min< std::size_t >(
         screen.rows, screen.dirty_rows.size( ) );
+
+    // Limit drawing to the terminal area, but release the clip before issuing
+    // an e-ink update. Some PocketBook firmwares apply the active clip to the
+    // update operation too, which prevents a real full-screen refresh.
+    {
+        ScopedClip scoped_clip( cx, cy, cw, ch );
 
     for ( std::size_t y = 0; y < n_rows; ++y )
     {
@@ -485,6 +489,7 @@ Display::update_screen_partial( TerminalScreen const & screen )
         dirty_top    = std::min( dirty_top,    py );
         dirty_bottom = std::max( dirty_bottom, py + cell_h );
     }
+    }
 
     // Merge new dirty-row data into the stored screen for future EVT_SHOW redraws.
     TerminalScreen merged = prev;
@@ -505,10 +510,10 @@ Display::update_screen_partial( TerminalScreen const & screen )
 
     if ( dirty_top < dirty_bottom )
     {
-        if ( ++m_partial_update_count >= 30 )
+        if ( ++m_partial_update_count >= 100 )
         {
             m_partial_update_count = 0;
-            SoftUpdate( );
+            FullUpdate( );
         }
         else
             PartialUpdateBW( cx, dirty_top, cw, dirty_bottom - dirty_top );
