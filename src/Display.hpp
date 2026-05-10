@@ -162,6 +162,10 @@ class Display
 
     int m_cell_width;
     int m_cell_height;
+
+    // Partial update counter for periodic full GC refresh to clear ghosting
+
+    int m_partial_update_count;
 };
 
 

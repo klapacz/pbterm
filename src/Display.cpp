@@ -110,6 +110,7 @@ Display::Display( Messenger & mess,
     , m_is_recording( false )
     , m_cell_width( 1 )
     , m_cell_height( 1 )
+    , m_partial_update_count( 0 )
 {
     OpenScreen( );
 
@@ -503,7 +504,15 @@ Display::update_screen_partial( TerminalScreen const & screen )
     m_terminal_screen.set_screen( merged );
 
     if ( dirty_top < dirty_bottom )
-        PartialUpdateBW( cx, dirty_top, cw, dirty_bottom - dirty_top );
+    {
+        if ( ++m_partial_update_count >= 30 )
+        {
+            m_partial_update_count = 0;
+            SoftUpdate( );
+        }
+        else
+            PartialUpdateBW( cx, dirty_top, cw, dirty_bottom - dirty_top );
+    }
 }
 
 
