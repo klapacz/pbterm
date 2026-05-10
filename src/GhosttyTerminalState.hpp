@@ -45,6 +45,9 @@ class GhosttyTerminalState
     Logger & m_logger;
     GhosttyTerminal m_terminal;
     GhosttyRenderState m_render_state;
+    GhosttyRenderStateRowIterator m_row_iterator;
+    GhosttyRenderStateRowCells m_row_cells;
+    std::vector< uint32_t > m_graphemes_buf;
 };
 
 #endif

@@ -95,6 +95,12 @@ class Display
     void
     draw_screen( TerminalScreen const & screen );
 
+    void
+    update_screen_partial( TerminalScreen const & screen );
+
+    void
+    update_cell_metrics( );
+
 
     // Name of the font to use
 
@@ -151,6 +157,11 @@ class Display
     // Flag, set while recording is switched on
 
     bool m_is_recording;
+
+    // Cached cell pixel dimensions (invalidated on font or orientation change)
+
+    int m_cell_width;
+    int m_cell_height;
 };
 
 

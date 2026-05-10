@@ -28,6 +28,13 @@ struct TerminalScreen
     bool cursor_visible = false;
     std::vector< std::string > lines;
     std::vector< std::vector< TerminalCell > > cells;
+
+    // Dirty tracking populated by GhosttyTerminalState::screen().
+    // 0 = nothing changed (skip redraw entirely)
+    // 1 = some rows changed (use dirty_rows for incremental repaint)
+    // 2 = full redraw required (resize, alternate screen, etc.)
+    int global_dirty = 2;
+    std::vector< bool > dirty_rows;
 };
 
 #endif

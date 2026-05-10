@@ -25,6 +25,7 @@
 #include "Utils.hpp"
 #include "Defaults.hpp"
 #include <algorithm>
+#include <limits>
 
 namespace
 {
@@ -107,6 +108,8 @@ Display::Display( Messenger & mess,
     , m_is_output_suspended( false )
     , m_is_redraw_needed( false )
     , m_is_recording( false )
+    , m_cell_width( 1 )
+    , m_cell_height( 1 )
 {
     OpenScreen( );
 
@@ -128,6 +131,7 @@ Display::Display( Messenger & mess,
     // the rotate() method
 
     rotate( config.default_orientation( ) );
+    update_cell_metrics( );
 }
 
 
@@ -200,6 +204,20 @@ Display::redraw( )
 
 
 /******************************************
+ * Caches cell pixel metrics derived from the active font. Must be called
+ * after any font or orientation change.
+ ******************************************/
+
+void
+Display::update_cell_metrics( )
+{
+    SetFont( m_font, BLACK );
+    m_cell_width  = std::max( 1, StringWidth( "M" ) );
+    m_cell_height = cell_height_px( m_font, m_font_size, m_lines.line_spacing( ) );
+}
+
+
+/******************************************
  * Adds text to be shown on the display
  ******************************************/
 
@@ -241,8 +259,28 @@ Display::set_text( std::string const & str )
 void
 Display::set_screen( TerminalScreen const & screen )
 {
-    m_terminal_screen.set_screen( screen );
-    redraw( );
+    if ( m_is_output_suspended )
+    {
+        m_is_redraw_needed = true;
+        return;
+    }
+
+    if ( screen.global_dirty == 0 )
+        return;
+
+    bool const need_full = screen.global_dirty == 2
+                        || ! m_terminal_screen.has_screen( )
+                        || screen.cols != m_terminal_screen.screen( ).cols
+                        || screen.rows != m_terminal_screen.screen( ).rows;
+
+    if ( need_full )
+    {
+        m_terminal_screen.set_screen( screen );
+        redraw( );
+        return;
+    }
+
+    update_screen_partial( screen );
 }
 
 
@@ -254,10 +292,8 @@ Display::set_screen( TerminalScreen const & screen )
 void
 Display::draw_screen( TerminalScreen const & screen )
 {
-    int const cell_width = std::max( 1, StringWidth( "M" ) );
-    int const cell_height = cell_height_px( m_font,
-                                            m_font_size,
-                                            m_lines.line_spacing( ) );
+    int const cell_width  = m_cell_width;
+    int const cell_height = m_cell_height;
     int const clip_x = m_lines.x_margin( );
     int const clip_y = m_lines.y_margin( );
     int const clip_w = std::max( 0, ScreenWidth( ) - 2 * m_lines.x_margin( ) );
@@ -346,6 +382,131 @@ Display::draw_screen( TerminalScreen const & screen )
 }
 
 
+/******************************************
+ * Partial incremental repaint using Ghostty dirty-row information.
+ * Only erases and repaints rows flagged dirty, then calls PartialUpdateBW
+ * on the bounding rectangle of changed rows. Clean rows keep their existing
+ * framebuffer pixels, which avoids ClearScreen and a full GC refresh.
+ ******************************************/
+
+void
+Display::update_screen_partial( TerminalScreen const & screen )
+{
+    SetFont( m_font, BLACK );
+
+    int const cell_w = m_cell_width;
+    int const cell_h = m_cell_height;
+    int const cx     = m_lines.x_margin( );
+    int const cy     = m_lines.y_margin( );
+    int const cw     = std::max( 0, ScreenWidth( )  - 2 * cx );
+    int const ch     = std::max( 0, ScreenHeight( ) - 2 * cy
+                                    - bottom_clip_guard_px( m_font,
+                                                            m_font_size ) );
+    if ( cw <= 0 || ch <= 0 )
+        return;
+
+    TerminalScreen const & prev = m_terminal_screen.screen( );
+    std::size_t const prev_cursor_y = static_cast< std::size_t >( prev.cursor_y );
+    bool const cursor_changed = prev.cursor_visible != screen.cursor_visible
+                             || prev.cursor_y        != screen.cursor_y
+                             || prev.cursor_x        != screen.cursor_x;
+
+    ScopedClip scoped_clip( cx, cy, cw, ch );
+
+    int dirty_top    = std::numeric_limits< int >::max( );
+    int dirty_bottom = 0;
+
+    std::size_t const n_rows = std::min< std::size_t >(
+        screen.rows, screen.dirty_rows.size( ) );
+
+    for ( std::size_t y = 0; y < n_rows; ++y )
+    {
+        bool const ghostty_dirty = screen.dirty_rows[ y ];
+        bool const cursor_dirty  = cursor_changed && y == prev_cursor_y;
+
+        if ( ! ghostty_dirty && ! cursor_dirty )
+            continue;
+
+        int const py = cy + static_cast< int >( y ) * cell_h;
+        if ( py >= cy + ch )
+            break;
+
+        FillArea( cx, py, cw, cell_h, WHITE );
+
+        // For ghostty-dirty rows use the new cell data; for cursor-only rows
+        // use the previously stored content (cursor highlight is cleared because
+        // we draw with the updated cursor position).
+        std::vector< TerminalCell > const * row_ptr = nullptr;
+        if ( ghostty_dirty
+             && y < screen.cells.size( )
+             && ! screen.cells[ y ].empty( ) )
+            row_ptr = &screen.cells[ y ];
+        else if ( y < prev.cells.size( ) )
+            row_ptr = &prev.cells[ y ];
+
+        if ( row_ptr )
+        {
+            std::vector< TerminalCell > const & row = *row_ptr;
+            for ( std::size_t x = 0; x < row.size( ); ++x )
+            {
+                int const px = cx + static_cast< int >( x ) * cell_w;
+                if ( px >= cx + cw )
+                    break;
+
+                TerminalCell const & cell = row[ x ];
+                bool const is_cursor = screen.cursor_visible
+                                    && x == screen.cursor_x
+                                    && y == screen.cursor_y;
+
+                if ( cell.has_background || is_cursor )
+                {
+                    int const bg = ( is_cursor || cell.dark_background )
+                                   ? BLACK : LGRAY;
+                    FillArea( px, py, cell_w, cell_h, bg );
+                }
+
+                if ( cell.has_text && cell.text != " " )
+                {
+                    int fg = BLACK;
+                    if ( is_cursor
+                         || ( cell.has_background && cell.dark_background ) )
+                        fg = WHITE;
+                    else if ( cell.dim_foreground )
+                        fg = DGRAY;
+
+                    SetFont( m_font, fg );
+                    DrawString( px, py, cell.text.c_str( ) );
+                }
+            }
+            SetFont( m_font, BLACK );
+        }
+
+        dirty_top    = std::min( dirty_top,    py );
+        dirty_bottom = std::max( dirty_bottom, py + cell_h );
+    }
+
+    // Merge new dirty-row data into the stored screen for future EVT_SHOW redraws.
+    TerminalScreen merged = prev;
+    merged.cursor_x       = screen.cursor_x;
+    merged.cursor_y       = screen.cursor_y;
+    merged.cursor_visible = screen.cursor_visible;
+    for ( std::size_t y = 0; y < n_rows; ++y )
+    {
+        if ( ! screen.dirty_rows[ y ] )
+            continue;
+        if ( y < screen.cells.size( ) && ! screen.cells[ y ].empty( ) )
+        {
+            if ( y < merged.cells.size( ) ) merged.cells[ y ] = screen.cells[ y ];
+            if ( y < merged.lines.size( ) ) merged.lines[ y ] = screen.lines[ y ];
+        }
+    }
+    m_terminal_screen.set_screen( merged );
+
+    if ( dirty_top < dirty_bottom )
+        PartialUpdateBW( cx, dirty_top, cw, dirty_bottom - dirty_top );
+}
+
+
 /***************************************
  * Called when the user makes a swipe gesture to scroll up or down
  ***************************************/
@@ -375,6 +536,7 @@ Display::rotate( int dir )
     SetFont( m_font, BLACK );
 
     m_lines.screen_dimensions_changed( );
+    update_cell_metrics( );
 
     Repaint( );
 }
@@ -413,6 +575,7 @@ Display::change_font_size( int incr )
 
     SetFont( m_font, BLACK );
     m_lines.change_font_size( m_font_size );
+    update_cell_metrics( );
     Repaint( );
 }
 
@@ -440,29 +603,19 @@ Display::terminal_geometry( ) const
 {
     TerminalGeometry geometry;
 
-    SetFont( m_font, BLACK );
-
-    int const cell_width = std::max( 1, StringWidth( "M" ) );
-    int const cell_height = cell_height_px( m_font,
-                                            m_font_size,
-                                            m_lines.line_spacing( ) );
-    int const usable_width = std::max( 0, ScreenWidth( ) - 2 * m_lines.x_margin( ) );
-    int const usable_height = std::max( 0, ScreenHeight( )
-                                           - 2 * m_lines.y_margin( )
+    int const cell_width  = m_cell_width;
+    int const cell_height = m_cell_height;
+    int const usable_width  = std::max( 0, ScreenWidth( )  - 2 * m_lines.x_margin( ) );
+    int const usable_height = std::max( 0, ScreenHeight( ) - 2 * m_lines.y_margin( )
                                            - bottom_clip_guard_px( m_font,
-                                                                   m_font_size ) );
+                                                                    m_font_size ) );
 
-    // Use the actual loaded font height, not only the requested font size.
-    // On PocketBook the rendered font can be a few pixels taller than the
-    // requested size. If we advertise too many terminal rows, DrawString()
-    // can draw the bottom rows partially off-screen; on-device that shows up
-    // as the last rows wrapping/ghosting at the top of the display. Keep the
-    // PTY/Ghostty geometry to rows that fully fit inside the drawable area.
-    geometry.cols = static_cast< uint16_t >( std::max( 20, usable_width / cell_width ) );
-    geometry.rows = static_cast< uint16_t >( std::max( 5, usable_height / cell_height ) );
-    geometry.cell_width_px = static_cast< uint32_t >( cell_width );
+    geometry.cols = static_cast< uint16_t >(
+        std::max( 20, usable_width / cell_width ) );
+    geometry.rows = static_cast< uint16_t >(
+        std::max( 5, usable_height / cell_height ) );
+    geometry.cell_width_px  = static_cast< uint32_t >( cell_width );
     geometry.cell_height_px = static_cast< uint32_t >( cell_height );
-
 
     return geometry;
 }

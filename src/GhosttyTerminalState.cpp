@@ -57,6 +57,8 @@ GhosttyTerminalState::GhosttyTerminalState( Logger & logger,
     : m_logger( logger )
     , m_terminal( nullptr )
     , m_render_state( nullptr )
+    , m_row_iterator( nullptr )
+    , m_row_cells( nullptr )
 {
     GhosttyTerminalOptions options = { };
     options.cols = cols;
@@ -81,13 +83,26 @@ GhosttyTerminalState::GhosttyTerminalState( Logger & logger,
         m_render_state = nullptr;
         m_logger.error( ) << "ghostty_render_state_new() failed" << std::endl;
     }
+
+    if ( m_render_state )
+    {
+        if ( ghostty_render_state_row_iterator_new( nullptr, &m_row_iterator )
+             != GHOSTTY_SUCCESS )
+            m_row_iterator = nullptr;
+        if ( ghostty_render_state_row_cells_new( nullptr, &m_row_cells )
+             != GHOSTTY_SUCCESS )
+            m_row_cells = nullptr;
+    }
 }
 
 GhosttyTerminalState::~GhosttyTerminalState( )
 {
+    if ( m_row_cells )
+        ghostty_render_state_row_cells_free( m_row_cells );
+    if ( m_row_iterator )
+        ghostty_render_state_row_iterator_free( m_row_iterator );
     if ( m_render_state )
         ghostty_render_state_free( m_render_state );
-
     if ( m_terminal )
         ghostty_terminal_free( m_terminal );
 }
@@ -184,6 +199,7 @@ TerminalScreen
 GhosttyTerminalState::screen( )
 {
     TerminalScreen screen;
+    screen.global_dirty = 0;
 
     if ( ! m_terminal )
         return screen;
@@ -192,20 +208,25 @@ GhosttyTerminalState::screen( )
     {
         ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_COLS, &screen.cols );
         ghostty_terminal_get( m_terminal, GHOSTTY_TERMINAL_DATA_ROWS, &screen.rows );
+        screen.global_dirty = 2;
         return screen;
     }
 
-    // The terminal grid storage can be circular after scrolling. Reading
-    // GHOSTTY_POINT_TAG_ACTIVE coordinates directly can therefore expose the
-    // physical row order, which makes the bottom rows appear at the top after
-    // enough output. The render state is Ghostty's viewport API; it linearizes
-    // the active visible screen into top-to-bottom rows and also gives cursor
-    // viewport coordinates.
     if ( ghostty_render_state_update( m_render_state, m_terminal ) != GHOSTTY_SUCCESS )
     {
         m_logger.error( ) << "ghostty_render_state_update() failed" << std::endl;
         return screen;
     }
+
+    // Check global dirty state before doing any work.
+    GhosttyRenderStateDirty dirty_state = GHOSTTY_RENDER_STATE_DIRTY_FALSE;
+    ghostty_render_state_get( m_render_state,
+                              GHOSTTY_RENDER_STATE_DATA_DIRTY,
+                              &dirty_state );
+    if ( dirty_state == GHOSTTY_RENDER_STATE_DIRTY_FALSE )
+        return screen;  // global_dirty == 0, caller skips redraw
+
+    screen.global_dirty = ( dirty_state == GHOSTTY_RENDER_STATE_DIRTY_FULL ) ? 2 : 1;
 
     ghostty_render_state_get( m_render_state,
                               GHOSTTY_RENDER_STATE_DATA_COLS,
@@ -234,33 +255,56 @@ GhosttyTerminalState::screen( )
         screen.cursor_visible = false;
 
     screen.lines.reserve( screen.rows );
+    screen.dirty_rows.reserve( screen.rows );
 
-    GhosttyRenderStateRowIterator rows = nullptr;
-    GhosttyRenderStateRowCells cells = nullptr;
-    if (    ghostty_render_state_row_iterator_new( nullptr, &rows ) != GHOSTTY_SUCCESS
-         || ghostty_render_state_row_cells_new( nullptr, &cells ) != GHOSTTY_SUCCESS
-         || ghostty_render_state_get( m_render_state,
-                                      GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR,
-                                      &rows ) != GHOSTTY_SUCCESS )
+    // Use persistent row iterator and cells to avoid per-frame heap allocation.
+    if ( ! m_row_iterator || ! m_row_cells )
     {
-        if ( cells )
-            ghostty_render_state_row_cells_free( cells );
-        if ( rows )
-            ghostty_render_state_row_iterator_free( rows );
-        m_logger.error( ) << "ghostty render row iterator setup failed" << std::endl;
+        m_logger.error( ) << "ghostty render iterators not preallocated" << std::endl;
+        screen.global_dirty = 0;
         return screen;
     }
 
-    while ( ghostty_render_state_row_iterator_next( rows )
+    if ( ghostty_render_state_get( m_render_state,
+                                   GHOSTTY_RENDER_STATE_DATA_ROW_ITERATOR,
+                                   &m_row_iterator ) != GHOSTTY_SUCCESS )
+    {
+        m_logger.error( ) << "ghostty render row iterator setup failed" << std::endl;
+        screen.global_dirty = 0;
+        return screen;
+    }
+
+    bool const full = ( dirty_state == GHOSTTY_RENDER_STATE_DIRTY_FULL );
+
+    while ( ghostty_render_state_row_iterator_next( m_row_iterator )
             && screen.lines.size( ) < screen.rows )
     {
+        bool row_dirty = full;
+        if ( ! full )
+            ghostty_render_state_row_get( m_row_iterator,
+                                          GHOSTTY_RENDER_STATE_ROW_DATA_DIRTY,
+                                          &row_dirty );
+        screen.dirty_rows.push_back( row_dirty );
+
+        if ( ! row_dirty )
+        {
+            // Skip cell data for unchanged rows; Display keeps the previous pixels.
+            screen.lines.push_back( std::string( ) );
+            screen.cells.push_back( std::vector< TerminalCell >( ) );
+            bool const clean = false;
+            ghostty_render_state_row_set( m_row_iterator,
+                                          GHOSTTY_RENDER_STATE_ROW_OPTION_DIRTY,
+                                          &clean );
+            continue;
+        }
+
         std::string line;
         std::vector< TerminalCell > row_cells;
         row_cells.reserve( screen.cols );
 
-        if ( ghostty_render_state_row_get( rows,
+        if ( ghostty_render_state_row_get( m_row_iterator,
                                            GHOSTTY_RENDER_STATE_ROW_DATA_CELLS,
-                                           &cells ) == GHOSTTY_SUCCESS )
+                                           &m_row_cells ) == GHOSTTY_SUCCESS )
         {
             for ( uint16_t x = 0; x < screen.cols; ++x )
             {
@@ -268,24 +312,22 @@ GhosttyTerminalState::screen( )
                 uint32_t graphemes_len = 0;
                 uint32_t codepoint = 0;
 
-                if ( ghostty_render_state_row_cells_select( cells, x ) == GHOSTTY_SUCCESS )
+                if ( ghostty_render_state_row_cells_select( m_row_cells, x )
+                     == GHOSTTY_SUCCESS )
                 {
-                    if (    ghostty_render_state_row_cells_get( cells,
-                                                                GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_LEN,
-                                                                &graphemes_len ) == GHOSTTY_SUCCESS
+                    if (    ghostty_render_state_row_cells_get(
+                                m_row_cells,
+                                GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_LEN,
+                                &graphemes_len ) == GHOSTTY_SUCCESS
                          && graphemes_len > 0 )
                     {
-                        // GRAPHEMES_BUF writes graphemes_len uint32_t values into
-                        // the caller-provided buffer. The previous code passed a
-                        // single uint32_t, which corrupts the stack for combined
-                        // graphemes and can make text disappear while the cursor
-                        // still renders. Keep the full buffer, but render the base
-                        // codepoint for now.
-                        std::vector< uint32_t > graphemes( graphemes_len );
-                        if ( ghostty_render_state_row_cells_get( cells,
-                                                                 GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF,
-                                                                 graphemes.data( ) ) == GHOSTTY_SUCCESS )
-                            codepoint = graphemes[ 0 ];
+                        if ( m_graphemes_buf.size( ) < graphemes_len )
+                            m_graphemes_buf.resize( graphemes_len );
+                        if ( ghostty_render_state_row_cells_get(
+                                 m_row_cells,
+                                 GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_GRAPHEMES_BUF,
+                                 m_graphemes_buf.data( ) ) == GHOSTTY_SUCCESS )
+                            codepoint = m_graphemes_buf[ 0 ];
                     }
 
                     if ( codepoint != 0 )
@@ -296,9 +338,10 @@ GhosttyTerminalState::screen( )
                     }
 
                     GhosttyColorRgb bg = { };
-                    if ( ghostty_render_state_row_cells_get( cells,
-                                                             GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_BG_COLOR,
-                                                             &bg ) == GHOSTTY_SUCCESS
+                    if ( ghostty_render_state_row_cells_get(
+                             m_row_cells,
+                             GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_BG_COLOR,
+                             &bg ) == GHOSTTY_SUCCESS
                          && is_non_default_background( bg ) )
                     {
                         terminal_cell.has_background = true;
@@ -306,9 +349,10 @@ GhosttyTerminalState::screen( )
                     }
 
                     GhosttyColorRgb fg = { };
-                    if ( ghostty_render_state_row_cells_get( cells,
-                                                             GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_FG_COLOR,
-                                                             &fg ) == GHOSTTY_SUCCESS )
+                    if ( ghostty_render_state_row_cells_get(
+                             m_row_cells,
+                             GHOSTTY_RENDER_STATE_ROW_CELLS_DATA_FG_COLOR,
+                             &fg ) == GHOSTTY_SUCCESS )
                         terminal_cell.dim_foreground = luminance( fg ) > 170;
                 }
 
@@ -323,16 +367,24 @@ GhosttyTerminalState::screen( )
         }
         screen.lines.push_back( line );
         screen.cells.push_back( row_cells );
+
+        bool const clean = false;
+        ghostty_render_state_row_set( m_row_iterator,
+                                      GHOSTTY_RENDER_STATE_ROW_OPTION_DIRTY,
+                                      &clean );
     }
 
     while ( screen.lines.size( ) < screen.rows )
     {
         screen.lines.push_back( std::string( screen.cols, ' ' ) );
         screen.cells.push_back( std::vector< TerminalCell >( screen.cols ) );
+        screen.dirty_rows.push_back( full );
     }
 
-    ghostty_render_state_row_cells_free( cells );
-    ghostty_render_state_row_iterator_free( rows );
+    GhosttyRenderStateDirty const clean_state = GHOSTTY_RENDER_STATE_DIRTY_FALSE;
+    ghostty_render_state_set( m_render_state,
+                              GHOSTTY_RENDER_STATE_OPTION_DIRTY,
+                              &clean_state );
 
     return screen;
 }
