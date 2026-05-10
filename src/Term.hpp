@@ -23,6 +23,7 @@
 
 
 #include "GhosttyTerminalState.hpp"
+#include "TerminalClipboard.hpp"
 #include "TerminalGeometry.hpp"
 #include <string>
 #include <vector>
@@ -64,6 +65,10 @@ class Term
 
     void
     send_control( char crtl );
+
+
+    void
+    paste_clipboard( );
 
 
     void
@@ -167,6 +172,12 @@ class Term
     // provides the text snapshot used by the display.
 
     GhosttyTerminalState m_ghostty;
+
+
+    // Terminal clipboard populated by OSC 52 sequences from apps such as
+    // tmux/Helix and used by the local paste shortcut.
+
+    TerminalClipboard m_clipboard;
 
 
     // Last geometry successfully applied to Ghostty/the PTY.

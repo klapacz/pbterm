@@ -67,6 +67,7 @@ SET (SRC_LIST
     ${CMAKE_SOURCE_DIR}/src/Config.cpp
     ${CMAKE_SOURCE_DIR}/src/Term.cpp	
     ${CMAKE_SOURCE_DIR}/src/TerminalBytes.cpp
+    ${CMAKE_SOURCE_DIR}/src/TerminalClipboard.cpp
     ${CMAKE_SOURCE_DIR}/src/Display.cpp
     ${CMAKE_SOURCE_DIR}/src/Keyboard_Handler.cpp
     ${CMAKE_SOURCE_DIR}/src/BluetoothKeyboardDiscovery.cpp

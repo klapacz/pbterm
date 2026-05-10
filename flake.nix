@@ -208,6 +208,36 @@
           '';
         };
 
+        terminal-clipboard = pkgs.stdenv.mkDerivation {
+          pname = "terminal-clipboard-test";
+          version = "0.0.1";
+          src = self;
+          dontConfigure = true;
+          buildPhase = ''
+            runHook preBuild
+            $CXX -std=c++17 \
+              -I$src/src \
+              $src/src/TerminalClipboard.cpp \
+              $src/src/Logger.cpp \
+              $src/src/Utils.cpp \
+              $src/tests/TerminalClipboardTest.cpp \
+              -o terminal-clipboard-test
+            runHook postBuild
+          '';
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            ./terminal-clipboard-test
+            runHook postCheck
+          '';
+          installPhase = ''
+            runHook preInstall
+            mkdir -p $out/bin
+            cp terminal-clipboard-test $out/bin/
+            runHook postInstall
+          '';
+        };
+
         bluetooth-keyboard-discovery = pkgs.stdenv.mkDerivation {
           pname = "bluetooth-keyboard-discovery-test";
           version = "0.0.1";

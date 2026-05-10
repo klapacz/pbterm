@@ -83,6 +83,7 @@ Term::Term( Messenger & mess,
     , m_read_fd( -1 )
     , m_logger( config.logger( ) )
     , m_ghostty( m_logger, geometry.cols, geometry.rows )
+    , m_clipboard( m_logger )
     , m_geometry( geometry )
     , m_max_history( config.max_history( ) )
     , m_cmd_file( config.cmd_file( ) )
@@ -256,6 +257,69 @@ Term::send_control( char ctrl )
 
 
 /******************************************
+ * Pastes the terminal clipboard into the PTY.
+ ******************************************/
+
+void
+Term::paste_clipboard( )
+{
+    if ( m_clipboard.empty( ) )
+    {
+        m_logger.info( ) << "Paste requested but terminal clipboard is empty" << std::endl;
+        return;
+    }
+
+    bool bracketed = false;
+    if ( m_ghostty.valid( ) )
+        ghostty_terminal_mode_get( m_ghostty.terminal( ),
+                                   GHOSTTY_MODE_BRACKETED_PASTE,
+                                   &bracketed );
+
+    std::string data = m_clipboard.text( );
+    std::string encoded;
+    size_t written = 0;
+
+    GhosttyResult result = ghostty_paste_encode( data.empty( ) ? nullptr : &data[ 0 ],
+                                                 data.size( ),
+                                                 bracketed,
+                                                 nullptr,
+                                                 0,
+                                                 &written );
+    if ( result == GHOSTTY_OUT_OF_SPACE )
+    {
+        encoded.resize( written );
+        data = m_clipboard.text( );
+        result = ghostty_paste_encode( data.empty( ) ? nullptr : &data[ 0 ],
+                                       data.size( ),
+                                       bracketed,
+                                       encoded.empty( ) ? nullptr : &encoded[ 0 ],
+                                       encoded.size( ),
+                                       &written );
+        if ( result == GHOSTTY_SUCCESS )
+            encoded.resize( written );
+    }
+
+    if ( result != GHOSTTY_SUCCESS )
+    {
+        m_logger.warn( ) << "ghostty_paste_encode() failed, falling back to raw paste" << std::endl;
+        encoded = m_clipboard.text( );
+        if ( bracketed )
+            encoded = std::string( "\x1b[200~" ) + encoded + "\x1b[201~";
+        else
+            for ( char & c : encoded )
+                if ( c == '\n' )
+                    c = '\r';
+    }
+
+    m_logger.info( ) << "Pasting terminal clipboard: "
+                     << m_clipboard.text( ).size( ) << " bytes, encoded="
+                     << encoded.size( ) << " bytes, bracketed="
+                     << ( bracketed ? "yes" : "no" ) << std::endl;
+    send( encoded.c_str( ), static_cast< int >( encoded.size( ) ) );
+}
+
+
+/******************************************
  * Resizes Ghostty and the backing PTY to match the visible screen cells.
  ******************************************/
 
@@ -371,6 +435,11 @@ Term::timer_handler( )
     {
         // Feed the shell output into Ghostty's VT state and redraw from the
         // terminal grid. Recording still gets the original byte stream.
+
+        std::string const clipboard_response = m_clipboard.process_output( txt );
+        if ( ! clipboard_response.empty( ) )
+            send( clipboard_response.c_str( ),
+                  static_cast< int >( clipboard_response.size( ) ) );
 
         // Feed the terminal emulator the exact PTY byte stream. Do not
         // normalize LF to CRLF here: full-screen TUIs may intentionally use

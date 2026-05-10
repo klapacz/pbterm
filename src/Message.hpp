@@ -160,6 +160,11 @@ struct message
     };
 
 
+    // Message sent when the local terminal clipboard should be pasted
+
+    struct Paste_Clipboard { };
+
+
     // Message sent when the user requests that a control character is sent
 
     struct New_Ctrl_Char

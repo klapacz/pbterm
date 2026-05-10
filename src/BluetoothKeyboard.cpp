@@ -246,11 +246,19 @@ std::string BluetoothKeyboard::translate_key( unsigned short code, bool press )
 
     int const modifier = 1 + ( m_shift ? 1 : 0 ) + ( m_alt ? 2 : 0 ) + ( m_ctrl ? 4 : 0 );
 
-    // Local terminal shortcuts: resize the PocketBook font instead of
-    // forwarding Ctrl-minus/Ctrl-plus to the shell.  On typical keyboards
-    // '+' is Shift+'=', so support both Ctrl+'=' and Ctrl+Shift+'='.
+    // Local terminal shortcuts. Handle these before forwarding so they don't
+    // leak into the shell/TUI.
     if ( m_ctrl && ! m_alt && ! m_altgr )
     {
+        if ( m_shift && code == KEY_V )
+        {
+            m_mess.send( message::Paste_Clipboard( ) );
+            return {};
+        }
+
+        // Resize the PocketBook font instead of forwarding Ctrl-minus/Ctrl-plus
+        // to the shell. On typical keyboards '+' is Shift+'=', so support both
+        // Ctrl+'=' and Ctrl+Shift+'='.
         if ( code == KEY_MINUS )
         {
             m_mess.send( message::Change_Font_Size( -1 ) );

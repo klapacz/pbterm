@@ -195,6 +195,18 @@ Messenger::send< message::Terminal_Input >( message::Terminal_Input const & mess
 
 
 /******************************************
+ * Receives a local paste request for the terminal clipboard.
+ ******************************************/
+
+template < >
+void
+Messenger::send< message::Paste_Clipboard >( message::Paste_Clipboard const & )
+{
+    m_term->paste_clipboard( );
+}
+
+
+/******************************************
  * Receives the "New Ctrl_Char" message, sent when the user asked for a
  * control char being sent to the shell
  ******************************************/
