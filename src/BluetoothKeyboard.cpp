@@ -48,7 +48,27 @@ std::map<int, char> const shifted = {
     { KEY_BACKSLASH, '|' }, { KEY_SEMICOLON, ':' }, { KEY_APOSTROPHE, '"' },
     { KEY_GRAVE, '~' }, { KEY_COMMA, '<' }, { KEY_DOT, '>' }, { KEY_SLASH, '?' }
 };
+
+std::string csi_u( int codepoint, int modifier )
+{
+    return "\x1b[" + std::to_string( codepoint ) + ";" + std::to_string( modifier ) + "u";
 }
+
+std::string csi_final( char final, int modifier )
+{
+    if ( modifier == 1 )
+        return std::string( "\x1b[" ) + final;
+    return "\x1b[1;" + std::to_string( modifier ) + final;
+}
+
+std::string csi_tilde( int number, int modifier )
+{
+    if ( modifier == 1 )
+        return "\x1b[" + std::to_string( number ) + "~";
+    return "\x1b[" + std::to_string( number ) + ";" + std::to_string( modifier ) + "~";
+}
+}
+
 
 BluetoothKeyboard::BluetoothKeyboard( Messenger & mess, Logger & logger )
     : m_mess( mess )
@@ -224,22 +244,31 @@ std::string BluetoothKeyboard::translate_key( unsigned short code, bool press )
     if ( code == KEY_RIGHTALT ) { m_altgr = press; return {}; }
     if ( ! press ) return {};
 
+    int const modifier = 1 + ( m_shift ? 1 : 0 ) + ( m_alt ? 2 : 0 ) + ( m_ctrl ? 4 : 0 );
+
     switch ( code )
     {
-        case KEY_ENTER: return "\r";
-        case KEY_BACKSPACE: return "\x7f";
-        case KEY_TAB: return "\t";
+        case KEY_ENTER:
+            if ( m_shift || m_ctrl || m_alt ) return csi_u( 13, modifier );
+            return "\r";
+        case KEY_BACKSPACE:
+            if ( m_shift || m_ctrl || m_alt ) return csi_u( 127, modifier );
+            return "\x7f";
+        case KEY_TAB:
+            if ( m_shift && ! m_ctrl && ! m_alt ) return "\x1b[Z";
+            if ( m_shift || m_ctrl || m_alt ) return csi_u( 9, modifier );
+            return "\t";
         case KEY_ESC: return "\x1b";
         case KEY_CAPSLOCK: return "\x1b";
-        case KEY_UP: return "\x1b[A";
-        case KEY_DOWN: return "\x1b[B";
-        case KEY_RIGHT: return "\x1b[C";
-        case KEY_LEFT: return "\x1b[D";
-        case KEY_HOME: return "\x1b[H";
-        case KEY_END: return "\x1b[F";
-        case KEY_DELETE: return "\x1b[3~";
-        case KEY_PAGEUP: return "\x1b[5~";
-        case KEY_PAGEDOWN: return "\x1b[6~";
+        case KEY_UP: return csi_final( 'A', modifier );
+        case KEY_DOWN: return csi_final( 'B', modifier );
+        case KEY_RIGHT: return csi_final( 'C', modifier );
+        case KEY_LEFT: return csi_final( 'D', modifier );
+        case KEY_HOME: return csi_final( 'H', modifier );
+        case KEY_END: return csi_final( 'F', modifier );
+        case KEY_DELETE: return csi_tilde( 3, modifier );
+        case KEY_PAGEUP: return csi_tilde( 5, modifier );
+        case KEY_PAGEDOWN: return csi_tilde( 6, modifier );
     }
 
     auto const & map = m_shift ? shifted : normal;
@@ -247,10 +276,11 @@ std::string BluetoothKeyboard::translate_key( unsigned short code, bool press )
     if ( it == map.end() ) return {};
     char c = it->second;
     std::string out;
-    if ( m_ctrl && c >= 'a' && c <= 'z' ) out = std::string( 1, c - 'a' + 1 );
+    if ( m_ctrl && m_shift && c >= 'A' && c <= 'Z' ) out = csi_u( c, modifier );
+    else if ( m_ctrl && c >= 'a' && c <= 'z' ) out = std::string( 1, c - 'a' + 1 );
     else if ( m_ctrl && c >= 'A' && c <= 'Z' ) out = std::string( 1, c - 'A' + 1 );
     else out = std::string( 1, c );
-    if ( m_alt ) out.insert( out.begin(), '\x1b' );
+    if ( m_alt && out.size() == 1 ) out.insert( out.begin(), '\x1b' );
     return out;
 }
 
