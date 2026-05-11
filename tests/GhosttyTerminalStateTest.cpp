@@ -64,6 +64,24 @@ main( )
     if ( screen.cells[ 0 ][ 0 ].text != "h" )
         return fail( "first cell text is wrong" );
 
+    uint16_t const cursor_x = screen.cursor_x;
+    uint16_t const cursor_y = screen.cursor_y;
+    char const * cursor_left = "\x1b[D";
+    terminal.write( cursor_left, std::char_traits< char >::length( cursor_left ) );
+    TerminalScreen const cursor_screen = terminal.screen( );
+
+    if ( cursor_screen.global_dirty == 0 )
+        return fail( "cursor-only movement did not request repaint" );
+    if ( cursor_screen.cursor_y != cursor_y )
+        return fail( "cursor-only movement changed row unexpectedly" );
+    if ( cursor_x > 0 && cursor_screen.cursor_x != cursor_x - 1 )
+        return fail( "cursor-only movement did not update cursor column" );
+    if ( cursor_screen.dirty_rows.size( ) != cursor_screen.rows )
+        return fail( "cursor-only movement did not report clean row list" );
+    for ( bool dirty : cursor_screen.dirty_rows )
+        if ( dirty )
+            return fail( "cursor-only movement marked a content row dirty" );
+
     GhosttyTerminalState scrolled( logger, 8, 5, 100 );
     if ( ! scrolled.valid( ) )
         return fail( "scrolled GhosttyTerminalState is not valid" );

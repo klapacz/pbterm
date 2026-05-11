@@ -59,6 +59,10 @@ GhosttyTerminalState::GhosttyTerminalState( Logger & logger,
     , m_render_state( nullptr )
     , m_row_iterator( nullptr )
     , m_row_cells( nullptr )
+    , m_have_last_cursor( false )
+    , m_last_cursor_visible( false )
+    , m_last_cursor_x( 0 )
+    , m_last_cursor_y( 0 )
 {
     GhosttyTerminalOptions options = { };
     options.cols = cols;
@@ -248,13 +252,15 @@ GhosttyTerminalState::screen( )
         return screen;
     }
 
-    // Check global dirty state before doing any work.
+    // Check global dirty state before doing cell work. Cursor-only movement
+    // can leave Ghostty's render rows clean, but the visible terminal still
+    // changed: shells/tmux often move only the hardware cursor for readline or
+    // copy-mode navigation. Return a lightweight partial screen in that case
+    // so Display can repaint the old/new cursor rows from its cached cells.
     GhosttyRenderStateDirty dirty_state = GHOSTTY_RENDER_STATE_DIRTY_FALSE;
     ghostty_render_state_get( m_render_state,
                               GHOSTTY_RENDER_STATE_DATA_DIRTY,
                               &dirty_state );
-    if ( dirty_state == GHOSTTY_RENDER_STATE_DIRTY_FALSE )
-        return screen;  // global_dirty == 0, caller skips redraw
 
     screen.global_dirty = ( dirty_state == GHOSTTY_RENDER_STATE_DIRTY_FULL ) ? 2 : 1;
 
@@ -283,6 +289,32 @@ GhosttyTerminalState::screen( )
     }
     else
         screen.cursor_visible = false;
+
+    bool const cursor_changed =
+           m_have_last_cursor
+        && (    m_last_cursor_visible != screen.cursor_visible
+             || m_last_cursor_x       != screen.cursor_x
+             || m_last_cursor_y       != screen.cursor_y );
+
+    if ( dirty_state == GHOSTTY_RENDER_STATE_DIRTY_FALSE )
+    {
+        if ( ! cursor_changed )
+        {
+            m_have_last_cursor   = true;
+            m_last_cursor_visible = screen.cursor_visible;
+            m_last_cursor_x       = screen.cursor_x;
+            m_last_cursor_y       = screen.cursor_y;
+            screen.global_dirty   = 0;
+            return screen;
+        }
+
+        screen.global_dirty = 1;
+        screen.dirty_rows.assign( screen.rows, false );
+        m_last_cursor_visible = screen.cursor_visible;
+        m_last_cursor_x       = screen.cursor_x;
+        m_last_cursor_y       = screen.cursor_y;
+        return screen;
+    }
 
     screen.lines.reserve( screen.rows );
     screen.dirty_rows.reserve( screen.rows );
@@ -416,6 +448,11 @@ GhosttyTerminalState::screen( )
                               GHOSTTY_RENDER_STATE_OPTION_DIRTY,
                               &clean_state );
 
+    m_have_last_cursor    = true;
+    m_last_cursor_visible = screen.cursor_visible;
+    m_last_cursor_x       = screen.cursor_x;
+    m_last_cursor_y       = screen.cursor_y;
+
     return screen;
 }
 
@@ -442,6 +479,7 @@ GhosttyTerminalState::resize( uint16_t cols,
                                                           cell_width_px,
                                                           cell_height_px );
     init_render_helpers( );
+    m_have_last_cursor = false;
 
     if ( result != GHOSTTY_SUCCESS )
     {

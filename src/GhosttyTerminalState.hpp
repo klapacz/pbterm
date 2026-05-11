@@ -52,6 +52,11 @@ class GhosttyTerminalState
     GhosttyRenderStateRowIterator m_row_iterator;
     GhosttyRenderStateRowCells m_row_cells;
     std::vector< uint32_t > m_graphemes_buf;
+
+    bool m_have_last_cursor;
+    bool m_last_cursor_visible;
+    uint16_t m_last_cursor_x;
+    uint16_t m_last_cursor_y;
 };
 
 #endif

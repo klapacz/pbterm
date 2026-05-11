@@ -408,6 +408,7 @@ Display::update_screen_partial( TerminalScreen const & screen )
 
     TerminalScreen const & prev = m_terminal_screen.screen( );
     std::size_t const prev_cursor_y = static_cast< std::size_t >( prev.cursor_y );
+    std::size_t const new_cursor_y  = static_cast< std::size_t >( screen.cursor_y );
     bool const cursor_changed = prev.cursor_visible != screen.cursor_visible
                              || prev.cursor_y        != screen.cursor_y
                              || prev.cursor_x        != screen.cursor_x;
@@ -427,7 +428,9 @@ Display::update_screen_partial( TerminalScreen const & screen )
     for ( std::size_t y = 0; y < n_rows; ++y )
     {
         bool const ghostty_dirty = screen.dirty_rows[ y ];
-        bool const cursor_dirty  = cursor_changed && y == prev_cursor_y;
+        bool const cursor_dirty  = cursor_changed
+                                && (    ( prev.cursor_visible && y == prev_cursor_y )
+                                     || ( screen.cursor_visible && y == new_cursor_y ) );
 
         if ( ! ghostty_dirty && ! cursor_dirty )
             continue;
